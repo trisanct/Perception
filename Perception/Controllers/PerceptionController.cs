@@ -158,7 +158,10 @@ namespace Perception.Controllers
             var files = await _context.Files.Where(f => f.GUID == record.GUID).ToListAsync();
             foreach (var f in files) f.IsSubmitted = true;
             await _context.SaveChangesAsync();
+            //创建目录/wwwroot/predict/recordid并拷贝对应的输入文件
             //运行python程序进行预测(Task)
+            //创建目录/wwwroot/output/recordid保存输出文件
+            //更新_context.Records.Result
             return Ok(record.Id);
         }
         //for History(s).vue
@@ -196,8 +199,12 @@ namespace Perception.Controllers
         public async Task<IActionResult> History(int id)
         {
             var record = await _context.Records.Where(r => r.Id == id).FirstAsync();
-            var filelist = await _context.Files.Where(f => f.GUID == record.GUID).ToArrayAsync();
-            return Ok();
+            var filelist = await _context.Files
+                .Where(f => f.GUID == record.GUID)
+                .Include(f => f.Node)
+                .Select(f => new { filename = f.Name + f.Node.Extension, url = f.NodeId + f.Node.Extension, disease = "???", rate = 0.009 })
+                .ToArrayAsync();
+            return Ok(filelist);
         }
     }
 }
