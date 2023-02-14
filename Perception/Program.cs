@@ -2,22 +2,22 @@ using Microsoft.AspNetCore.Http.Features;
 using Microsoft.EntityFrameworkCore;
 using Perception;
 using Swashbuckle.AspNetCore.SwaggerGen;
+using System.Diagnostics;
+using System.Text;
 
-
-
-var MyAllowSpecificOrigins = "_MyAllowSubdomainPolicy";
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
-string[] urls = { "http://localhost.com:5173", "http://127.0.0.1:5173", "http://172.19.20.183", "http://121.41.200.206:5173", "http://9oj.fun:5173" };
+string[] urls = { "http://localhost:5173", "http://127.0.0.1:5173", "http://172.19.20.183", "http://121.41.200.206:5173", "http://9oj.fun:5173" };
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy(name: MyAllowSpecificOrigins,
+    options.AddPolicy("AllowCors",
         policy =>
         {
             policy.WithOrigins(urls)
                 .SetIsOriginAllowedToAllowWildcardSubdomains()
-                .AllowAnyHeader();
+                .AllowAnyHeader()
+                .AllowAnyMethod();
         });
 });
 builder.Services.Configure<FormOptions>(options =>
@@ -30,11 +30,14 @@ builder.Services.Configure<FormOptions>(options =>
 builder.Services.AddDbContext<PerceptionContext>(options => {
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection"));
 });
-builder.Services.AddControllers();
 
+builder.Services.AddControllers();
+//builder.Services.AddHostedService<PredictionService>();
+builder.Services.AddSingleton<PredictionService>();
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen(options => {
+builder.Services.AddSwaggerGen(options =>
+{
     options.OperationFilter<ReApplyOptionalRouteParameterOperationFilter>();
 });
 

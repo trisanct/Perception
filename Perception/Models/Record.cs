@@ -16,7 +16,7 @@ namespace Perception.Models
         public bool Cuda { get; set; }
         public float Confidence { get; set; }
         public DateTime Time { get; set; }
-        public string? Result { get; set; }
+        public List<Result>? Results { get; set; }
         public enum RecordMode { Predict, Video, Fps, Directory }
         public Record() { }
         public Record(RecordView record)
@@ -27,7 +27,7 @@ namespace Perception.Models
             TestInterval= record.TestInterval;
             Cuda= record.Cuda;
             Confidence= record.Confidence;
-            Result = null;
+            Results = null;
         }
     }
     public class RecordView

@@ -1,8 +1,11 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Components.Forms;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Perception.Models;
 using System.Data.SqlTypes;
+using System.Diagnostics;
 using System.IO;
+using static Perception.Models.Result;
 
 namespace Perception.Controllers
 {
@@ -10,11 +13,13 @@ namespace Perception.Controllers
     [Route("[controller]")]
     public class PerceptionController : ControllerBase
     {
-        private readonly PerceptionContext _context;
+        private readonly PerceptionContext context;
+        private readonly PredictionService prediction;
 
-        public PerceptionController(PerceptionContext context)
+        public PerceptionController(PerceptionContext context, PredictionService prediction)
         {
-            _context = context;
+            this.context = context;
+            this.prediction = prediction;
         }
         private byte[] HexToByte(string hex) { return Enumerable.Range(0, 32).Select(i => Convert.ToByte(hex.Substring(i << 1, 2), 16)).ToArray(); }
         private (string name, string ext) Apart(string fullname)
@@ -28,6 +33,12 @@ namespace Perception.Controllers
         public IActionResult Hello()
         {
             return Ok("Hello");
+        }
+        [HttpGet("/[Controller]/[Action]/{id}")]
+        public IActionResult TestTask(int id)
+        {
+            prediction.QueueTask(id);
+            return Ok();
         }
         [HttpGet("/[Controller]/[Action]")]
         public IActionResult GetGUID()
@@ -44,17 +55,17 @@ namespace Perception.Controllers
             var guid = Guid.NewGuid();
             var (name, ext) = Apart(vessel.Filename);
             var sha = HexToByte(vessel.Sha);
-            var node = await _context.Nodes.Where(f => f.SHA == sha).FirstOrDefaultAsync();
+            var node = await context.Nodes.Where(f => f.SHA == sha).FirstOrDefaultAsync();
             if (node == null)
             {
                 node = new FileNode(ext, sha, false);
-                await _context.Nodes.AddRangeAsync(node);
-                await _context.SaveChangesAsync();
+                await context.Nodes.AddRangeAsync(node);
+                await context.SaveChangesAsync();
                 Directory.CreateDirectory(Directory.GetCurrentDirectory() + $@"\wwwroot\input\{node.Id}");
             }
             var f = new FileMap(guid, name, false, node.Id);
-            await _context.Files.AddAsync(f);
-            await _context.SaveChangesAsync();
+            await context.Files.AddAsync(f);
+            await context.SaveChangesAsync();
             return Ok(guid);
         }
 
@@ -76,19 +87,19 @@ namespace Perception.Controllers
                         }
                         else return BadRequest();
                         var sha = HexToByte(shastring);
-                        var node = await _context.Nodes.Where(f => f.SHA == sha).FirstOrDefaultAsync();
+                        var node = await context.Nodes.Where(f => f.SHA == sha).FirstOrDefaultAsync();
                         var (name, ext) = Apart(file.FileName);
                         if (node == null)
                         {
                             node = new FileNode(ext, sha, true);
-                            await _context.Nodes.AddAsync(node);
-                            await _context.SaveChangesAsync();
+                            await context.Nodes.AddAsync(node);
+                            await context.SaveChangesAsync();
                             var path = Directory.GetCurrentDirectory() + $@"\wwwroot\input\{node.Id}{node.Extension}";
                             using (var stream = System.IO.File.Create(path)) await file.CopyToAsync(stream);
                         }
                         var f = new FileMap(guid, name, false, node.Id);
-                        await _context.Files.AddAsync(f);
-                        await _context.SaveChangesAsync();
+                        await context.Files.AddAsync(f);
+                        await context.SaveChangesAsync();
                         return Ok(guid);
                     }
                 }
@@ -110,7 +121,7 @@ namespace Perception.Controllers
                     if (file.Length > 0)
                     {
                         var guid = new Guid(guidstring);
-                        var f = await _context.Files.Where(f => f.GUID == guid).SingleAsync();
+                        var f = await context.Files.Where(f => f.GUID == guid).SingleAsync();
                         var filePath = Directory.GetCurrentDirectory() + $@"\wwwroot\input\{f.NodeId}\{id}.slice";
                         using (var stream = System.IO.File.Create(filePath)) await file.CopyToAsync(stream);
                         if (end) return await MergeSlices(guid, Int32.Parse(id));
@@ -129,7 +140,7 @@ namespace Perception.Controllers
         {
             try
             {
-                var vessel = await _context.Files.Where(f => f.GUID == guid).Include(f => f.Node).SingleAsync();
+                var vessel = await context.Files.Where(f => f.GUID == guid).Include(f => f.Node).SingleAsync();
                 using (var vesselstream = System.IO.File.Create(Directory.GetCurrentDirectory() + $@"\wwwroot\input\{vessel.NodeId}{vessel.Node.Extension}"))
                 {
                     for (int i = 0; i < id; i++)
@@ -141,7 +152,7 @@ namespace Perception.Controllers
                     }
                 }
                 vessel.Node.Ready = true;
-                await _context.SaveChangesAsync();
+                await context.SaveChangesAsync();
                 Directory.Delete(Directory.GetCurrentDirectory() + $@"\wwwroot\input\{vessel.NodeId}", true);
                 return Ok();
             }
@@ -151,17 +162,52 @@ namespace Perception.Controllers
             }
         }
         [HttpPost("/[Controller]/[Action]")]
-        public async Task<IActionResult> Submit([FromBody] RecordView recordv)
+        public async Task<IActionResult> Submit([FromBody] RecordView recordv/* , [FromServices] IServiceScopeFactory serviceScopeFactory*/)
         {
             var record = new Record(recordv);
-            await _context.Records.AddAsync(record);
-            var files = await _context.Files.Where(f => f.GUID == record.GUID).ToListAsync();
+            await context.Records.AddAsync(record);
+            var files = await context.Files.Where(f => f.GUID == record.GUID).ToListAsync();
             foreach (var f in files) f.IsSubmitted = true;
-            await _context.SaveChangesAsync();
-            //创建目录/wwwroot/predict/recordid并拷贝对应的输入文件
+            await context.SaveChangesAsync();
+            //_ = Task.Run(() => {
+            //    var inputpath = Directory.GetCurrentDirectory() + $@"\wwwroot\input";
+            //    var networkpath = Directory.GetCurrentDirectory() + @"\Neural\predict.py";
+            //    var p = new Process()
+            //    {
+            //        StartInfo = new ProcessStartInfo()
+            //        {
+            //            RedirectStandardOutput = true,
+            //            RedirectStandardError = true,
+            //            CreateNoWindow = false,
+            //            UseShellExecute = false,
+            //            WorkingDirectory = inputpath,
+            //            FileName = "python",
+            //            Arguments = $"{networkpath} predict 1.jpg"
+            //        }
+            //    };
+            //    p.Start();
+            //    p.WaitForExit();
+            //    if (p.ExitCode == 0)
+            //    {
+            //        var outstrings = p.StandardOutput.ReadToEnd().Split(',');
+            //        var pclass = (PredictedClass)Enum.Parse(typeof(PredictedClass), outstrings[0].Replace(" ", ""));
+            //        var score = float.Parse(outstrings[1]);
+            //        var res = context.Results.Where(r => r.Id == record.Id).FirstOrDefault();
+
+            //        if (res != null)
+            //        {
+            //            res.Class = pclass;
+            //            res.Score = score;
+            //            context.SaveChanges();
+            //        }
+            //    }
+            //    else
+            //    {
+
+            //    }
+            //});
             //运行python程序进行预测(Task)
-            //创建目录/wwwroot/output/recordid保存输出文件
-            //更新_context.Records.Result
+            prediction.QueueTask(record.Id);
             return Ok(record.Id);
         }
         //for History(s).vue
@@ -171,40 +217,45 @@ namespace Perception.Controllers
             if (lastid == 0)
                 return Ok(new
                 {
-                    count = await _context.Records.CountAsync(),
-                    recordlist = await _context.Records
+                    count = await context.Records.CountAsync(),
+                    recordlist = await context.Records
                     .OrderByDescending(r => r.Id)
                     .Take(10)
-                    .Select(r => new { id = r.Id, mode = r.Mode.ToString(), time = r.Time.ToString("F"), result = r.Result })
+                    .Select(r => new { id = r.Id, mode = r.Mode.ToString(), time = r.Time.ToString("F") })
                     .ToArrayAsync()
                 });
             else
-                if (direction) return Ok(await _context.Records
+                if (direction) return Ok(new
+                {
+                    count = await context.Records.CountAsync(),
+                    recordlist = await context.Records
                     .OrderByDescending(r => r.Id)
                     .Where(r => r.Id < lastid)
                     .Skip(10 * step)
                     .Take(10)
-                    .Select(r => new { id = r.Id, mode = r.Mode.ToString(), time = r.Time.ToString("F"), result = r.Result })
-                    .ToArrayAsync());
-            else return Ok(await _context.Records
+                    .Select(r => new { id = r.Id, mode = r.Mode.ToString(), time = r.Time.ToString("F") })
+                    .ToArrayAsync()
+                });
+            else return Ok(new
+            {
+                count = await context.Records.CountAsync(),
+                recordlist = await context.Records
                 .OrderBy(r => r.Id)
                 .Where(r => r.Id > lastid)
                 .Skip(10 * step)
                 .Take(10)
-                .Select(r => new { id = r.Id, mode = r.Mode.ToString(), time = r.Time.ToString("F"), result = r.Result })
+                .Select(r => new { id = r.Id, mode = r.Mode.ToString(), time = r.Time.ToString("F") })
                 .Reverse()
-                .ToArrayAsync());
+                .ToArrayAsync()
+            });
         }
         [HttpGet("/[Controller]/[Action]/{id}")]
         public async Task<IActionResult> History(int id)
         {
-            var record = await _context.Records.Where(r => r.Id == id).FirstAsync();
-            var filelist = await _context.Files
-                .Where(f => f.GUID == record.GUID)
-                .Include(f => f.Node)
-                .Select(f => new { filename = f.Name + f.Node.Extension, url = f.NodeId + f.Node.Extension, disease = "???", rate = 0.009 })
-                .ToArrayAsync();
-            return Ok(filelist);
+            var record = await context.Records.Where(r => r.Id == id).Include(r=>r.Results).FirstAsync();
+
+            prediction.QueueTask(record.Id);
+            return Ok(record);
         }
     }
 }
