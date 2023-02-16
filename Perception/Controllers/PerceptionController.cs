@@ -2,10 +2,11 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Perception.Models;
+using Perception.Services;
 using System.Data.SqlTypes;
 using System.Diagnostics;
 using System.IO;
-using static Perception.Models.Result;
+using static Perception.Models.Record;
 
 namespace Perception.Controllers
 {
@@ -14,12 +15,12 @@ namespace Perception.Controllers
     public class PerceptionController : ControllerBase
     {
         private readonly PerceptionContext context;
-        private readonly PredictionService prediction;
+        private TaskQueue Tasks { get; }
 
-        public PerceptionController(PerceptionContext context, PredictionService prediction)
+        public PerceptionController(PerceptionContext context, TaskQueue tasks)
         {
             this.context = context;
-            this.prediction = prediction;
+            Tasks = tasks;
         }
         private byte[] HexToByte(string hex) { return Enumerable.Range(0, 32).Select(i => Convert.ToByte(hex.Substring(i << 1, 2), 16)).ToArray(); }
         private (string name, string ext) Apart(string fullname)
@@ -37,7 +38,8 @@ namespace Perception.Controllers
         [HttpGet("/[Controller]/[Action]/{id}")]
         public IActionResult TestTask(int id)
         {
-            prediction.QueueTask(id);
+            var record = new Record() { Id = 1, Mode = RecordMode.Predict };
+            _ = Tasks.QueueTaskAsync(record);
             return Ok();
         }
         [HttpGet("/[Controller]/[Action]")]
@@ -207,7 +209,7 @@ namespace Perception.Controllers
             //    }
             //});
             //运行python程序进行预测(Task)
-            prediction.QueueTask(record.Id);
+            //prediction.QueueTask(record.Id);
             return Ok(record.Id);
         }
         //for History(s).vue
@@ -254,7 +256,7 @@ namespace Perception.Controllers
         {
             var record = await context.Records.Where(r => r.Id == id).Include(r=>r.Results).FirstAsync();
 
-            prediction.QueueTask(record.Id);
+            //prediction.QueueTask(record.Id);
             return Ok(record);
         }
     }

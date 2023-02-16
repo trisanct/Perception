@@ -1,45 +1,39 @@
-﻿using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.AspNetCore.Components.Forms;
 using Perception.Models;
 using System.Diagnostics;
-using System.Text;
-using System.Threading;
-using System.Xml.Linq;
+using System.Threading.Channels;
 
-namespace Perception
+namespace Perception.Services
 {
-    public class PredictionService: IDisposable
+    public class TaskQueue
     {
-        private Task maintask;
-        private Queue<Task> tasks;
-        private readonly string inputpath;
-        private readonly string baseworkpath;
-        private readonly string networkpath;
+        private readonly string inputpath = Directory.GetCurrentDirectory() + $@"\wwwroot\input";
+        private readonly string baseworkpath = Directory.GetCurrentDirectory() + $@"\wwwroot\work";
+        private readonly string networkpath = Directory.GetCurrentDirectory() + @"\Neural\predict.py";
+        private Channel<Task> Tasks { get; }
         private IServiceScopeFactory ScopeFactory { get; }
-        public PredictionService(IServiceScopeFactory scopeFactory)
+        public TaskQueue(IServiceScopeFactory scopeFactory)
         {
+            Tasks = Channel.CreateUnbounded<Task>();
             ScopeFactory = scopeFactory;
-            inputpath = Directory.GetCurrentDirectory() + $@"\wwwroot\input";
-            baseworkpath = Directory.GetCurrentDirectory() + $@"\wwwroot\work";
-            networkpath = Directory.GetCurrentDirectory() + @"\Neural\predict.py";
-            tasks = new Queue<Task>();
-            maintask = Task.Run(() =>
-            {
-                while (true)
-                {
-                    if (tasks.Count != 0)
-                    {
-                        var t = tasks.Dequeue();
-                        t.Start();
-                    }
-                    Thread.Sleep(1000);
-                }
-            });
         }
-        public void QueueTask(int id)
+        public async Task QueueTaskAsync(Record record)
         {
-            tasks.Enqueue(new Task(async () =>
+            var task = PredictionPredict(record);
+            await Tasks.Writer.WriteAsync(task);
+        }
+
+        public async Task<Task> DequeueAsync()
+        {
+            return await Tasks.Reader.ReadAsync();
+        }
+
+        private Task PredictionPredict(Record record)
+        {
+            return new Task(async () =>
             {
-                var workpath =  $@"{baseworkpath}\{id}";
+                Console.WriteLine($"进入task{record.Id}");
+                var workpath = $@"{baseworkpath}\{record.Id}";
                 Directory.CreateDirectory(workpath);
                 var p = new Process()
                 {
@@ -55,13 +49,15 @@ namespace Perception
                     }
                 };
                 p.Start();
+                Console.WriteLine($"运行python程序{record.Id}");
                 await p.WaitForExitAsync();
+                Console.WriteLine($"python程序退出{record.Id}");
                 if (p.ExitCode == 0)
                 {
-                    var outstrings = p.StandardOutput.ReadToEnd().TrimEnd(new char[]{ '\r','\n'}).Split(',');
-                    var pclass = outstrings[0].Replace(" ","");
+                    var outstrings = p.StandardOutput.ReadToEnd().TrimEnd(new char[] { '\r', '\n' }).Split(',');
+                    var pclass = outstrings[0].Replace(" ", "");
                     var score = outstrings[1];
-                    using(var scope = ScopeFactory.CreateScope())
+                    using (var scope = ScopeFactory.CreateScope())
                     {
                         using (var context = scope.ServiceProvider.GetService<PerceptionContext>())
                         {
@@ -70,10 +66,11 @@ namespace Perception
                             {
                                 Class = (Result.PredictedClass)Enum.Parse(typeof(Result.PredictedClass), pclass),
                                 Score = float.Parse(score),
-                                RecordId = id
+                                RecordId = record.Id
                             };
-                            await context!.Results.AddAsync(result);
-                            await context.SaveChangesAsync();
+                            Console.WriteLine($"class:{result.Class} score:{result.Score}");
+                            //await context!.Results.AddAsync(result);
+                            //await context.SaveChangesAsync();
                         }
                     }
                 }
@@ -82,12 +79,7 @@ namespace Perception
                     Console.WriteLine("error");
                     Console.WriteLine(p.StandardError.ReadToEnd());
                 }
-            }));
-        }
-        public void Dispose()
-        {
-            //maintask.Dispose();
-            //tasks.Clear();
+            });
         }
     }
 }
