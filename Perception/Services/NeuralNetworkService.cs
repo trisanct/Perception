@@ -1,13 +1,5 @@
-﻿using Microsoft.AspNetCore.Components.Forms;
-using Perception.Models;
-using System.Diagnostics;
-using System.Threading;
-using System.Threading.Channels;
-using System.Threading.Tasks;
-
-namespace Perception.Services
+﻿namespace Perception.Services
 {
- 
     public class NeuralNetworkService : BackgroundService
     {
         private readonly SemaphoreSlim semaphore=new SemaphoreSlim(4,4);
@@ -28,18 +20,20 @@ namespace Perception.Services
                 {
                     Console.WriteLine(semaphore.CurrentCount);
                     var t = await Tasks.DequeueAsync();
-                    t.Start();
-                    await t.WaitAsync(stoppingToken);
+                    await t;
+                    //t.Start();
+                    //await t.WaitAsync(stoppingToken);
                     semaphore.Release();
+                    Console.WriteLine("释放信号量");
                 });
             }
+            Console.WriteLine("退出死循环");
         }
 
 
         public override async Task StopAsync(CancellationToken stoppingToken)
         {
             Console.WriteLine("Queued Hosted Service is stopping.");
-
             await base.StopAsync(stoppingToken);
         }
     }

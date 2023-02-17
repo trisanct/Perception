@@ -11,15 +11,17 @@ namespace Perception.Models
         public int Id { get; set; }
         public Guid GUID { get; set; } 
         public RecordMode Mode { get; set; }
+        public RecordState State { get; set; }
         public int Fps { get; set; }
         public int TestInterval { get; set; }
         public bool Cuda { get; set; }
         public float Confidence { get; set; }
         public DateTime Time { get; set; }
-        public List<Result>? Results { get; set; }
+        public List<Result> Results { get; set; } = new List<Result>();
         public enum RecordMode { Predict, Video, Fps, Directory }
+        public enum RecordState { Waiting, Completed, Error}
         public Record() { }
-        public Record(RecordView record)
+        public Record(RecordForm record)
         {
             GUID= record.GUID;
             Mode= record.Mode;
@@ -27,10 +29,10 @@ namespace Perception.Models
             TestInterval= record.TestInterval;
             Cuda= record.Cuda;
             Confidence= record.Confidence;
-            Results = null;
+            State = RecordState.Waiting;
         }
     }
-    public class RecordView
+    public class RecordForm
     {
         public Guid GUID { get; set; }
         public RecordMode Mode { get; set; }

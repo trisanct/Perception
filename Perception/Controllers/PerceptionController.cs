@@ -38,37 +38,39 @@ namespace Perception.Controllers
         [HttpGet("/[Controller]/[Action]/{id}")]
         public IActionResult TestTask(int id)
         {
-            var record = new Record() { Id = 1, Mode = RecordMode.Predict };
-            _ = Tasks.QueueTaskAsync(record);
             return Ok();
         }
         [HttpGet("/[Controller]/[Action]")]
         public IActionResult GetGUID()
         {
             var guid = Guid.NewGuid();
-            Directory.CreateDirectory(Directory.GetCurrentDirectory() + $@"\wwwroot\input\{guid}");
+            Directory.CreateDirectory(Directory.GetCurrentDirectory() + $@"\wwwroot\upload\{guid}");
             return Ok(guid);
         }
 
         [HttpPost("/[Controller]/[Action]")]
         public async Task<IActionResult> GetGUID([FromBody] FileVessel vessel)
         {
-            if (vessel.Filename == null || vessel.Sha == null) return BadRequest();
-            var guid = Guid.NewGuid();
-            var (name, ext) = Apart(vessel.Filename);
-            var sha = HexToByte(vessel.Sha);
-            var node = await context.Nodes.Where(f => f.SHA == sha).FirstOrDefaultAsync();
-            if (node == null)
-            {
-                node = new FileNode(ext, sha, false);
-                await context.Nodes.AddRangeAsync(node);
+            try
+            { 
+                if (vessel.Filename == null || vessel.Sha == null) return BadRequest();
+                var guid = Guid.NewGuid();
+                var (name, ext) = Apart(vessel.Filename);
+                var sha = HexToByte(vessel.Sha);
+                var node = await context.Nodes.Where(f => f.SHA == sha).FirstOrDefaultAsync();
+                if (node == null)
+                {
+                    node = new FileNode(ext, sha, false);
+                    await context.Nodes.AddRangeAsync(node);
+                    await context.SaveChangesAsync();
+                    Directory.CreateDirectory(Directory.GetCurrentDirectory() + $@"\wwwroot\upload\{node.Id}");
+                }
+                var f = new FileMap(guid, name, false, node.Id);
+                await context.Files.AddAsync(f);
                 await context.SaveChangesAsync();
-                Directory.CreateDirectory(Directory.GetCurrentDirectory() + $@"\wwwroot\input\{node.Id}");
+                return Ok(guid);
             }
-            var f = new FileMap(guid, name, false, node.Id);
-            await context.Files.AddAsync(f);
-            await context.SaveChangesAsync();
-            return Ok(guid);
+            catch { return BadRequest(); }
         }
 
         [HttpPost("/[Controller]/[Action]/{mode}")]
@@ -96,7 +98,7 @@ namespace Perception.Controllers
                             node = new FileNode(ext, sha, true);
                             await context.Nodes.AddAsync(node);
                             await context.SaveChangesAsync();
-                            var path = Directory.GetCurrentDirectory() + $@"\wwwroot\input\{node.Id}{node.Extension}";
+                            var path = Directory.GetCurrentDirectory() + $@"\wwwroot\upload\{node.Id}{node.Extension}";
                             using (var stream = System.IO.File.Create(path)) await file.CopyToAsync(stream);
                         }
                         var f = new FileMap(guid, name, false, node.Id);
@@ -124,7 +126,7 @@ namespace Perception.Controllers
                     {
                         var guid = new Guid(guidstring);
                         var f = await context.Files.Where(f => f.GUID == guid).SingleAsync();
-                        var filePath = Directory.GetCurrentDirectory() + $@"\wwwroot\input\{f.NodeId}\{id}.slice";
+                        var filePath = Directory.GetCurrentDirectory() + $@"\wwwroot\upload\{f.NodeId}\{id}.slice";
                         using (var stream = System.IO.File.Create(filePath)) await file.CopyToAsync(stream);
                         if (end) return await MergeSlices(guid, Int32.Parse(id));
                         return Ok();
@@ -143,11 +145,11 @@ namespace Perception.Controllers
             try
             {
                 var vessel = await context.Files.Where(f => f.GUID == guid).Include(f => f.Node).SingleAsync();
-                using (var vesselstream = System.IO.File.Create(Directory.GetCurrentDirectory() + $@"\wwwroot\input\{vessel.NodeId}{vessel.Node.Extension}"))
+                using (var vesselstream = System.IO.File.Create(Directory.GetCurrentDirectory() + $@"\wwwroot\upload\{vessel.NodeId}{vessel.Node.Extension}"))
                 {
                     for (int i = 0; i < id; i++)
                     {
-                        using (var slicestream = System.IO.File.OpenRead(Directory.GetCurrentDirectory() + $@"\wwwroot\input\{vessel.NodeId}\{i}.slice"))
+                        using (var slicestream = System.IO.File.OpenRead(Directory.GetCurrentDirectory() + $@"\wwwroot\upload\{vessel.NodeId}\{i}.slice"))
                         {
                             await slicestream.CopyToAsync(vesselstream);
                         }
@@ -164,53 +166,19 @@ namespace Perception.Controllers
             }
         }
         [HttpPost("/[Controller]/[Action]")]
-        public async Task<IActionResult> Submit([FromBody] RecordView recordv/* , [FromServices] IServiceScopeFactory serviceScopeFactory*/)
+        public async Task<IActionResult> Submit([FromBody] RecordForm recordf)
         {
-            var record = new Record(recordv);
-            await context.Records.AddAsync(record);
-            var files = await context.Files.Where(f => f.GUID == record.GUID).ToListAsync();
-            foreach (var f in files) f.IsSubmitted = true;
-            await context.SaveChangesAsync();
-            //_ = Task.Run(() => {
-            //    var inputpath = Directory.GetCurrentDirectory() + $@"\wwwroot\input";
-            //    var networkpath = Directory.GetCurrentDirectory() + @"\Neural\predict.py";
-            //    var p = new Process()
-            //    {
-            //        StartInfo = new ProcessStartInfo()
-            //        {
-            //            RedirectStandardOutput = true,
-            //            RedirectStandardError = true,
-            //            CreateNoWindow = false,
-            //            UseShellExecute = false,
-            //            WorkingDirectory = inputpath,
-            //            FileName = "python",
-            //            Arguments = $"{networkpath} predict 1.jpg"
-            //        }
-            //    };
-            //    p.Start();
-            //    p.WaitForExit();
-            //    if (p.ExitCode == 0)
-            //    {
-            //        var outstrings = p.StandardOutput.ReadToEnd().Split(',');
-            //        var pclass = (PredictedClass)Enum.Parse(typeof(PredictedClass), outstrings[0].Replace(" ", ""));
-            //        var score = float.Parse(outstrings[1]);
-            //        var res = context.Results.Where(r => r.Id == record.Id).FirstOrDefault();
-
-            //        if (res != null)
-            //        {
-            //            res.Class = pclass;
-            //            res.Score = score;
-            //            context.SaveChanges();
-            //        }
-            //    }
-            //    else
-            //    {
-
-            //    }
-            //});
-            //运行python程序进行预测(Task)
-            //prediction.QueueTask(record.Id);
-            return Ok(record.Id);
+            try
+            {
+                var record = new Record(recordf);
+                await context.Records.AddAsync(record);
+                var files = await context.Files.Where(f => f.GUID == record.GUID).Include(f=>f.Node).ToListAsync();
+                foreach (var f in files) f.IsSubmitted = true;
+                await context.SaveChangesAsync();
+                _ = Tasks.QueueTaskAsync(record,files);
+                return Ok(record.Id);
+            }
+            catch { return BadRequest(); }
         }
         //for History(s).vue
         [HttpGet("/[Controller]/[Action]/{direction}/{lastid}/{step}")]
@@ -223,7 +191,7 @@ namespace Perception.Controllers
                     recordlist = await context.Records
                     .OrderByDescending(r => r.Id)
                     .Take(10)
-                    .Select(r => new { id = r.Id, mode = r.Mode.ToString(), time = r.Time.ToString("F") })
+                    .Select(r => new { id = r.Id, mode = r.Mode.ToString(), state= r.State.ToString(), time = r.Time.ToString("F") })
                     .ToArrayAsync()
                 });
             else
@@ -235,7 +203,7 @@ namespace Perception.Controllers
                     .Where(r => r.Id < lastid)
                     .Skip(10 * step)
                     .Take(10)
-                    .Select(r => new { id = r.Id, mode = r.Mode.ToString(), time = r.Time.ToString("F") })
+                    .Select(r => new { id = r.Id, mode = r.Mode.ToString(), state = r.State.ToString(), time = r.Time.ToString("F") })
                     .ToArrayAsync()
                 });
             else return Ok(new
@@ -246,18 +214,26 @@ namespace Perception.Controllers
                 .Where(r => r.Id > lastid)
                 .Skip(10 * step)
                 .Take(10)
-                .Select(r => new { id = r.Id, mode = r.Mode.ToString(), time = r.Time.ToString("F") })
+                .Select(r => new { id = r.Id, mode = r.Mode.ToString(), state = r.State.ToString(), time = r.Time.ToString("F") })
                 .Reverse()
                 .ToArrayAsync()
             });
         }
         [HttpGet("/[Controller]/[Action]/{id}")]
-        public async Task<IActionResult> History(int id)
+        public async Task<IActionResult> TestHistory(int id)
         {
             var record = await context.Records.Where(r => r.Id == id).Include(r=>r.Results).FirstAsync();
-
-            //prediction.QueueTask(record.Id);
+            var files = await context.Files.Where(f => f.GUID == record.GUID).Include(f => f.Node).ToListAsync();
+            _ = Tasks.QueueTaskAsync(record,files);
             return Ok(record);
+        }
+        [HttpGet("/[Controller]/[Action]/{id}")]
+        public async Task<IActionResult> History(int id)
+        {
+            var record = await context.Records.Where(r => r.Id == id).Include(r => r.Results).FirstAsync();
+            var files = await context.Files.Where(f => f.GUID == record.GUID).Include(f => f.Node).ToListAsync();
+            var recordv = new PredictModeRecordView(record, files[0]);
+            return Ok(new { mode = recordv.Mode, state = recordv.State, record = recordv });
         }
     }
 }
