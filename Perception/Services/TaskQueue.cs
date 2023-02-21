@@ -26,7 +26,7 @@ namespace Perception.Services
         {
             Task task;
             if (record.Mode == Record.RecordMode.Predict) task = PredictModeTask(record);
-            if (record.Mode == Record.RecordMode.Directory) task = DirectoryModeTask(record);
+            else if (record.Mode == Record.RecordMode.Directory) task = DirectoryModeTask(record);
             else task = TestPredict(record, record.Files);
             await Tasks.Writer.WriteAsync(task);
         }
@@ -53,13 +53,13 @@ namespace Perception.Services
                         UseShellExecute = false,
                         WorkingDirectory = workpath,
                         FileName = "python",
-                        Arguments = $@"{networkpath} predict {record.Id}{record.Files[0].Node.Extension} {record.Id}{record.Files[0].Node.Extension}"
+                        Arguments = $@"{networkpath} predict {record.Files[0].Id}{record.Files[0].Node.Extension} {record.Files[0].Id}_out{record.Files[0].Node.Extension}"
                     }
                 };
                 p.Start();
-                Console.WriteLine($"运行python程序{record.Id}");
+                //Console.WriteLine($"运行python程序{record.Id}");
                 await p.WaitForExitAsync();
-                Console.WriteLine($"python程序退出{record.Id}");
+                //Console.WriteLine($"python程序退出{record.Id}");
                 using (var scope = ScopeFactory.CreateScope())
                 {
                     using (var context = scope.ServiceProvider.GetService<PerceptionContext>())
@@ -69,20 +69,24 @@ namespace Perception.Services
                         if (p.ExitCode != 0) record.State = Record.RecordState.Error;
                         else
                         {
-                            var outstrings = p.StandardOutput.ReadToEnd().TrimEnd(new char[] { '\r', '\n' }).Split(',');
-                            var pclass = outstrings[0];
-                            var score = float.Parse(outstrings[1]);
-                            Console.WriteLine($"class:{pclass} score:{score}");
-                            var result = new Result()
+                            var output= p.StandardOutput.ReadToEnd().TrimEnd(new char[] { '\r', '\n' });
+                            if(output.Length > 0)
                             {
-                                Class = pclass,
-                                Score = score,
-                                FileId = record.Files[0].Id
-                            };
+                                var outstrings = output.Split(',');
+                                var pclass = outstrings[0];
+                                var score = float.Parse(outstrings[1]);
+                                Console.WriteLine($"class:{pclass} score:{score}");
+                                var result = new Result()
+                                {
+                                    Class = pclass,
+                                    Score = score,
+                                    FileId = record.Files[0].Id
+                                };
+                                await context.Results.AddAsync(result);
+                            }
                             record.State = Record.RecordState.Completed;
-                            context.Entry(record).Property("State").IsModified = true;
-                            await context.Results.AddAsync(result);
                         }
+                        context.Entry(record).Property("State").IsModified = true;
                         await context.SaveChangesAsync();
                     }
                 }
@@ -126,22 +130,24 @@ namespace Perception.Services
                         if (p.ExitCode != 0) record.State = Record.RecordState.Error;
                         else
                         {
-                            var rows = p.StandardOutput.ReadToEnd().Split("\r\n");
+                            var rows = p.StandardOutput.ReadToEnd().TrimEnd(new char[] { '\r', '\n' }).Split("\r\n");
                             foreach (var row in rows)
                             {
-                                if (row == "") continue;
-                                var outstrings = row.Split(',');
-                                var fileid = int.Parse(outstrings[0].Substring(0, outstrings[0].LastIndexOf('.')));
-                                var pclass = outstrings[1];
-                                var score = float.Parse(outstrings[2]);
-                                Console.WriteLine($"class:{pclass} score:{score}");
-                                var result = new Result()
+                                var outstrings = row.TrimEnd(',').Split(',');
+                                if(outstrings.Length == 3)
                                 {
-                                    Class = pclass,
-                                    Score = score,
-                                    FileId = fileid
-                                };
-                                await context.Results.AddAsync(result);
+                                    var fileid = int.Parse(outstrings[0].Substring(0, outstrings[0].LastIndexOf('.')));
+                                    var pclass = outstrings[1];
+                                    var score = float.Parse(outstrings[2]);
+                                    Console.WriteLine($"class:{pclass} score:{score}");
+                                    var result = new Result()
+                                    {
+                                        Class = pclass,
+                                        Score = score,
+                                        FileId = fileid
+                                    };
+                                    await context.Results.AddAsync(result);
+                                }
                             }
                             record.State = Record.RecordState.Completed;
                             context.Entry(record).Property("State").IsModified = true;

@@ -20,19 +20,29 @@ namespace Perception.Models
             State = record.State.ToString();
             Confidence = record.Confidence;
             Time = record.Time.ToString("F");
-            Results= new List<ResultView>();
+            Results = new List<ResultView>();
             if (record.State == RecordState.Completed)
             {
                 foreach (var file in record.Files)
                 {
-                    Results.Add(new ResultView
-                    {
-                        Filename= file.Name+file.Node.Extension,
-                        Class = file.Results[0].Class,
-                        Score = file.Results[0].Score,
-                        InUrl = $"/work/{Id}/{file.Id}{file.Node.Extension}",
-                        OutUrl = $"/work/{Id}/out/{file.Id}{file.Node.Extension}"
-                    });
+                    if (file.Results.Count > 0)
+                        Results.Add(new ResultView
+                        {
+                            Filename = file.Name + file.Node.Extension,
+                            Class = file.Results[0].Class,
+                            Score = file.Results[0].Score,
+                            InUrl = $"/work/{Id}/{file.Id}{file.Node.Extension}",
+                            OutUrl = $"/work/{Id}/out/{file.Id}{file.Node.Extension}"
+                        });
+                    else
+                        Results.Add(new ResultView
+                        {
+                            Filename = file.Name + file.Node.Extension,
+                            Class = "未检出",
+                            InUrl = $"/work/{Id}/{file.Id}{file.Node.Extension}",
+                            OutUrl = $"/work/{Id}/out/{file.Id}{file.Node.Extension}"
+                        });
+
                 }
             }
 
@@ -42,8 +52,8 @@ namespace Perception.Models
     {
         public string Filename { get; set; }
         public string Class { get; set; }
-        public float Score { get; set; }
-        public string InUrl { get; set; }
-        public string OutUrl { get; set; }
+        public float? Score { get; set; }
+        public string? InUrl { get; set; }
+        public string? OutUrl { get; set; }
     }
 }
