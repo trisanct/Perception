@@ -1,7 +1,9 @@
 ﻿using Microsoft.AspNetCore.Components.Forms;
+using Perception.Data;
 using Perception.Models;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Security.Claims;
 using System.Threading.Channels;
 
 namespace Perception.Services
@@ -20,11 +22,12 @@ namespace Perception.Services
             Tasks = Channel.CreateUnbounded<Task>();
             ScopeFactory = scopeFactory;
         }
-        public async Task QueueTaskAsync(Record record, List<FileMap> files)
+        public async Task QueueTaskAsync(Record record)
         {
             Task task;
-            if (record.Mode == Record.RecordMode.Predict) task = PredictModeTask(record, files);
-            else task = TestPredict(record, files);
+            if (record.Mode == Record.RecordMode.Predict) task = PredictModeTask(record);
+            if (record.Mode == Record.RecordMode.Directory) task = DirectoryModeTask(record);
+            else task = TestPredict(record, record.Files);
             await Tasks.Writer.WriteAsync(task);
         }
 
@@ -32,14 +35,14 @@ namespace Perception.Services
         {
             return await Tasks.Reader.ReadAsync();
         }
-        private async Task PredictModeTask(Record record, List<FileMap> files)
+        private async Task PredictModeTask(Record record)
         {
             try
             {
                 Console.WriteLine($"进入task{record.Id}");
                 var workpath = $@"{baseworkpath}\{record.Id}";
                 Directory.CreateDirectory(workpath);
-                File.Copy($@"{inputpath}\{files[0].NodeId}{files[0].Node.Extension}", $@"{workpath}\{record.Id}{files[0].Node.Extension}", true);
+                File.Copy($@"{inputpath}\{record.Files[0].NodeId}{record.Files[0].Node.Extension}", $@"{workpath}\{record.Files[0].Id}{record.Files[0].Node.Extension}", true);
                 var p = new Process()
                 {
                     StartInfo = new ProcessStartInfo()
@@ -50,7 +53,7 @@ namespace Perception.Services
                         UseShellExecute = false,
                         WorkingDirectory = workpath,
                         FileName = "python",
-                        Arguments = $@"{networkpath} predict {record.Id}{files[0].Node.Extension} {record.Id}_out{files[0].Node.Extension}"
+                        Arguments = $@"{networkpath} predict {record.Id}{record.Files[0].Node.Extension} {record.Id}{record.Files[0].Node.Extension}"
                     }
                 };
                 p.Start();
@@ -67,28 +70,87 @@ namespace Perception.Services
                         else
                         {
                             var outstrings = p.StandardOutput.ReadToEnd().TrimEnd(new char[] { '\r', '\n' }).Split(',');
-                            var pclass = outstrings[0].Replace(" ", "");
-                            var score = outstrings[1];
+                            var pclass = outstrings[0];
+                            var score = float.Parse(outstrings[1]);
                             Console.WriteLine($"class:{pclass} score:{score}");
                             var result = new Result()
                             {
-                                Class = (Result.PredictedClass)Enum.Parse(typeof(Result.PredictedClass), pclass),
-                                Score = float.Parse(score),
-                                RecordId = record.Id
+                                Class = pclass,
+                                Score = score,
+                                FileId = record.Files[0].Id
                             };
                             record.State = Record.RecordState.Completed;
-                            context.Entry(record).Property("State").IsModified=true;
+                            context.Entry(record).Property("State").IsModified = true;
                             await context.Results.AddAsync(result);
                         }
                         await context.SaveChangesAsync();
                     }
                 }
             }
-            catch(Exception e) { Console.WriteLine(e.Message); }
+            catch (Exception e) { Console.WriteLine(e.Message); }
         }
-        private async Task Directory(Record record, List<FileMap> files)
+        private async Task DirectoryModeTask(Record record)
         {
+            try
+            {
+                Console.WriteLine($"进入task{record.Id}");
+                var workpath = $@"{baseworkpath}\{record.Id}";
+                Directory.CreateDirectory(workpath);
+                foreach (var file in record.Files)
+                {
+                    File.Copy($@"{inputpath}\{file.NodeId}{file.Node.Extension}", $@"{workpath}\{file.Id}{file.Node.Extension}", true);
+                }
+                var p = new Process()
+                {
+                    StartInfo = new ProcessStartInfo()
+                    {
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true,
+                        CreateNoWindow = false,
+                        UseShellExecute = false,
+                        WorkingDirectory = workpath,
+                        FileName = "python",
+                        Arguments = $@"{networkpath} directory ./ ./out"
+                    }
+                };
+                p.Start();
+                Console.WriteLine($"运行python程序{record.Id}");
+                await p.WaitForExitAsync();
+                Console.WriteLine($"python程序退出{record.Id}");
+                using (var scope = ScopeFactory.CreateScope())
+                {
+                    using (var context = scope.ServiceProvider.GetService<PerceptionContext>())
+                    {
+                        if (context == null) throw new Exception("未知错误");
 
+                        if (p.ExitCode != 0) record.State = Record.RecordState.Error;
+                        else
+                        {
+                            var rows = p.StandardOutput.ReadToEnd().Split("\r\n");
+                            foreach (var row in rows)
+                            {
+                                if (row == "") continue;
+                                var outstrings = row.Split(',');
+                                var fileid = int.Parse(outstrings[0].Substring(0, outstrings[0].LastIndexOf('.')));
+                                var pclass = outstrings[1];
+                                var score = float.Parse(outstrings[2]);
+                                Console.WriteLine($"class:{pclass} score:{score}");
+                                var result = new Result()
+                                {
+                                    Class = pclass,
+                                    Score = score,
+                                    FileId = fileid
+                                };
+                                await context.Results.AddAsync(result);
+                            }
+                            record.State = Record.RecordState.Completed;
+                            context.Entry(record).Property("State").IsModified = true;
+                        }
+                        await context.SaveChangesAsync();
+                    }
+                }
+            }
+            catch (Exception e) { Console.WriteLine(e.Message); }
         }
         private async Task TestPredict(Record record, List<FileMap> files)
         {
@@ -124,9 +186,9 @@ namespace Perception.Services
                         //var record = await context!.Records.Where(r => r.Id == id).FirstOrDefaultAsync();
                         var result = new Result()
                         {
-                            Class = (Result.PredictedClass)Enum.Parse(typeof(Result.PredictedClass), pclass),
+                            Class = pclass,
                             Score = float.Parse(score),
-                            RecordId = record.Id
+                            FileId = record.Files[0].Id
                         };
                         Console.WriteLine($"class:{result.Class} score:{result.Score}");
                         await context!.Results.AddAsync(result);

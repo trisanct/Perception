@@ -1,7 +1,7 @@
 ﻿using Microsoft.EntityFrameworkCore.Metadata.Internal;
 using System.ComponentModel.DataAnnotations.Schema;
 
-namespace Perception.Models
+namespace Perception.Data
 {
     public class FileNode
     {
@@ -14,7 +14,7 @@ namespace Perception.Models
         public FileNode() { }
         public FileNode(string ext, byte[] sha, bool ready)
         {
-            Extension= ext;
+            Extension = ext;
             SHA = sha;
             Ready = ready;
         }

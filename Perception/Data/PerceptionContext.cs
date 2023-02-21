@@ -1,7 +1,6 @@
 ﻿using Microsoft.EntityFrameworkCore;
-using Perception.Models;
 
-namespace Perception
+namespace Perception.Data
 {
     public class PerceptionContext : DbContext
     {
@@ -16,8 +15,13 @@ namespace Perception
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             modelBuilder.Entity<Record>()
-                .Property(r=>r.Time)
+                .Property(r => r.Time)
                 .HasDefaultValueSql("getdate()");
+            modelBuilder.Entity<FileMap>()
+                .HasMany(f => f.Results)
+                .WithOne()
+                .HasForeignKey(r => r.FileId)
+                .OnDelete(DeleteBehavior.Cascade);
             base.OnModelCreating(modelBuilder);
         }
     }

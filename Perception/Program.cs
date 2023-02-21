@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Http.Features;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Perception;
+using Perception.Data;
 using Perception.Services;
 using Swashbuckle.AspNetCore.SwaggerGen;
 using System.Diagnostics;
@@ -42,7 +43,7 @@ builder.Services.AddSwaggerGen(options =>
 {
     options.OperationFilter<ReApplyOptionalRouteParameterOperationFilter>();
 });
-
+builder.Services.AddDirectoryBrowser();
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
@@ -52,7 +53,7 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 app.UseCors();
-app.UseStaticFiles();
+app.UseFileServer(enableDirectoryBrowsing: true);//app.UseStaticFiles();
 app.UseAuthorization();
 
 app.MapControllers();

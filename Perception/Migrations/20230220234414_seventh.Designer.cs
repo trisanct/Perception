@@ -12,8 +12,8 @@ using Perception.Data;
 namespace Perception.Migrations
 {
     [DbContext(typeof(PerceptionContext))]
-    [Migration("20230211021343_first")]
-    partial class first
+    [Migration("20230220234414_seventh")]
+    partial class seventh
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -36,9 +36,6 @@ namespace Perception.Migrations
                     b.Property<Guid>("GUID")
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<bool>("IsSubmitted")
-                        .HasColumnType("bit");
-
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
@@ -46,9 +43,14 @@ namespace Perception.Migrations
                     b.Property<int>("NodeId")
                         .HasColumnType("int");
 
+                    b.Property<int?>("RecordId")
+                        .HasColumnType("int");
+
                     b.HasKey("Id");
 
                     b.HasIndex("NodeId");
+
+                    b.HasIndex("RecordId");
 
                     b.ToTable("Files");
                 });
@@ -94,14 +96,11 @@ namespace Perception.Migrations
                     b.Property<int>("Fps")
                         .HasColumnType("int");
 
-                    b.Property<Guid>("GUID")
-                        .HasColumnType("uniqueidentifier");
-
                     b.Property<int>("Mode")
                         .HasColumnType("int");
 
-                    b.Property<string>("Result")
-                        .HasColumnType("nvarchar(max)");
+                    b.Property<int>("State")
+                        .HasColumnType("int");
 
                     b.Property<int>("TestInterval")
                         .HasColumnType("int");
@@ -116,6 +115,31 @@ namespace Perception.Migrations
                     b.ToTable("Records");
                 });
 
+            modelBuilder.Entity("Perception.Models.Result", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Class")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("FileId")
+                        .HasColumnType("int");
+
+                    b.Property<float>("Score")
+                        .HasColumnType("real");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FileId");
+
+                    b.ToTable("Results");
+                });
+
             modelBuilder.Entity("Perception.Models.FileMap", b =>
                 {
                     b.HasOne("Perception.Models.FileNode", "Node")
@@ -124,7 +148,30 @@ namespace Perception.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
+                    b.HasOne("Perception.Models.Record", null)
+                        .WithMany("Files")
+                        .HasForeignKey("RecordId");
+
                     b.Navigation("Node");
+                });
+
+            modelBuilder.Entity("Perception.Models.Result", b =>
+                {
+                    b.HasOne("Perception.Models.FileMap", null)
+                        .WithMany("Results")
+                        .HasForeignKey("FileId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Perception.Models.FileMap", b =>
+                {
+                    b.Navigation("Results");
+                });
+
+            modelBuilder.Entity("Perception.Models.Record", b =>
+                {
+                    b.Navigation("Files");
                 });
 #pragma warning restore 612, 618
         }

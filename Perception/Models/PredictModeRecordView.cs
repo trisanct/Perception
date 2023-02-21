@@ -1,6 +1,7 @@
 ﻿using System.Text.RegularExpressions;
-using static Perception.Models.Record;
-using static Perception.Models.Result;
+using Perception.Data;
+using static Perception.Data.Record;
+using static Perception.Data.Result;
 
 namespace Perception.Models
 {
@@ -17,21 +18,20 @@ namespace Perception.Models
         public string? InUrl { get; set; }
         public string? OutUrl { get; set; }
 
-        public PredictModeRecordView(Record record, FileMap file)
+        public PredictModeRecordView(Record record)
         {
             Id = record.Id;
             Mode = record.Mode.ToString();
             State = record.State.ToString();
-            Filename = file.Name + file.Node.Extension;
+            Filename = record.Files[0].Name + record.Files[0].Node.Extension;
             Confidence = record.Confidence;
             Time = record.Time.ToString("F");
-            var reg = @"(?<!^)(?=[A-Z])";
             if (record.State == RecordState.Completed)
             {
-                Class = Regex.Split(record.Results[0].Class.ToString(), reg).Aggregate("", (res, next) => res == "" ? next : res + " " + next);
-                Score = record.Results[0].Score;
-                InUrl = $"/work/{Id}/{Id}{file.Node.Extension}";
-                OutUrl = $"/work/{Id}/{Id}_out{file.Node.Extension}";
+                Class = record.Files[0].Results[0].Class;
+                Score = record.Files[0].Results[0].Score;
+                InUrl = $"/work/{Id}/{Id}{record.Files[0].Node.Extension}";
+                OutUrl = $"/work/{Id}/{Id}_out{record.Files[0].Node.Extension}";
             }
 
         }

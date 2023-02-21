@@ -1,22 +1,22 @@
 ﻿using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
-namespace Perception.Models
+namespace Perception.Data
 {
     public class FileMap
     {
         public int Id { get; set; }
         public Guid GUID { get; set; }
         public string Name { get; set; } = string.Empty;
-        public bool IsSubmitted { get; set; }
+        public int? RecordId { get; set; }
         public int NodeId { get; set; }
         public FileNode Node { get; set; }
+        public List<Result> Results { get; set; } = new List<Result>();
         public FileMap() { }
-        public FileMap(Guid guid, string name, bool issubmitted, int nodeid)
+        public FileMap(Guid guid, string name, int nodeid)
         {
             GUID = guid;
             Name = name;
-            IsSubmitted = issubmitted;
             NodeId = nodeid;
         }
     }

@@ -4,7 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
-using Perception;
+using Perception.Data;
 
 #nullable disable
 
@@ -33,9 +33,6 @@ namespace Perception.Migrations
                     b.Property<Guid>("GUID")
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<bool>("IsSubmitted")
-                        .HasColumnType("bit");
-
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
@@ -43,9 +40,14 @@ namespace Perception.Migrations
                     b.Property<int>("NodeId")
                         .HasColumnType("int");
 
+                    b.Property<int?>("RecordId")
+                        .HasColumnType("int");
+
                     b.HasKey("Id");
 
                     b.HasIndex("NodeId");
+
+                    b.HasIndex("RecordId");
 
                     b.ToTable("Files");
                 });
@@ -91,9 +93,6 @@ namespace Perception.Migrations
                     b.Property<int>("Fps")
                         .HasColumnType("int");
 
-                    b.Property<Guid>("GUID")
-                        .HasColumnType("uniqueidentifier");
-
                     b.Property<int>("Mode")
                         .HasColumnType("int");
 
@@ -121,10 +120,11 @@ namespace Perception.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
-                    b.Property<int>("Class")
-                        .HasColumnType("int");
+                    b.Property<string>("Class")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
 
-                    b.Property<int>("RecordId")
+                    b.Property<int>("FileId")
                         .HasColumnType("int");
 
                     b.Property<float>("Score")
@@ -132,7 +132,7 @@ namespace Perception.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("RecordId");
+                    b.HasIndex("FileId");
 
                     b.ToTable("Results");
                 });
@@ -145,21 +145,30 @@ namespace Perception.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
+                    b.HasOne("Perception.Models.Record", null)
+                        .WithMany("Files")
+                        .HasForeignKey("RecordId");
+
                     b.Navigation("Node");
                 });
 
             modelBuilder.Entity("Perception.Models.Result", b =>
                 {
-                    b.HasOne("Perception.Models.Record", null)
+                    b.HasOne("Perception.Models.FileMap", null)
                         .WithMany("Results")
-                        .HasForeignKey("RecordId")
+                        .HasForeignKey("FileId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
 
-            modelBuilder.Entity("Perception.Models.Record", b =>
+            modelBuilder.Entity("Perception.Models.FileMap", b =>
                 {
                     b.Navigation("Results");
+                });
+
+            modelBuilder.Entity("Perception.Models.Record", b =>
+                {
+                    b.Navigation("Files");
                 });
 #pragma warning restore 612, 618
         }
