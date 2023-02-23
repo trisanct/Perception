@@ -9,6 +9,7 @@ namespace Perception.Data
     public class Record
     {
         public int Id { get; set; }
+        public int DatasetId { get; set; }
         public RecordMode Mode { get; set; }
         public RecordState State { get; set; }
         public int Fps { get; set; }
@@ -17,6 +18,7 @@ namespace Perception.Data
         public float Confidence { get; set; }
         public DateTime Time { get; set; }
         public List<FileMap> Files { get; set; } = new List<FileMap>();
+        public Dataset? Dataset { get; set; }
         public enum RecordMode { Predict, Video, Fps, Directory }
         public enum RecordState { Waiting, Completed, Error }
         public Record() { }

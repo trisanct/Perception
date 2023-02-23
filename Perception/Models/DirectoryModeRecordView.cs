@@ -8,6 +8,7 @@ namespace Perception.Models
     public class DirectoryModeRecordView
     {
         public int Id { get; set; }
+        public string Dataset { get; set; }
         public string Mode { get; set; }
         public string State { get; set; }
         public float Confidence { get; set; }
@@ -16,6 +17,7 @@ namespace Perception.Models
         public DirectoryModeRecordView(Record record)
         {
             Id = record.Id;
+            Dataset = record.Dataset is null ? "" : record.Dataset.Name;
             Mode = record.Mode.ToString();
             State = record.State.ToString();
             Confidence = record.Confidence;

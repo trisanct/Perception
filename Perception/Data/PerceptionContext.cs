@@ -12,6 +12,7 @@ namespace Perception.Data
         public DbSet<FileMap> Files { get; set; }
         public DbSet<FileNode> Nodes { get; set; }
         public DbSet<Result> Results { get; set; }
+        public DbSet<Dataset> Datasets { get; set; }
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             modelBuilder.Entity<Record>()

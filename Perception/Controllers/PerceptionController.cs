@@ -219,49 +219,52 @@ namespace Perception.Controllers
         [HttpGet("/[Controller]/[Action]/{direction}/{lastid}/{step}")]
         public async Task<IActionResult> Record(bool direction, int lastid, int step)
         {
+            var datasets =  await context.Datasets.ToDictionaryAsync(d => d.Id, d => d.Name);
+            var count = await context.Records.CountAsync();
             if (lastid == 0)
                 return Ok(new
                 {
-                    count = await context.Records.CountAsync(),
+                    count,
                     recordlist = await context.Records
                     .OrderByDescending(r => r.Id)
                     .Take(10)
-                    .Select(r => new { id = r.Id, mode = r.Mode.ToString(), state= r.State.ToString(), time = r.Time.ToString("F") })
+                    .Select(r => new { id = r.Id, mode = r.Mode.ToString(), state = r.State.ToString(), time = r.Time.ToString("F"), dataset = datasets[r.DatasetId] })
                     .ToArrayAsync()
                 });
             else
                 if (direction) return Ok(new
                 {
-                    count = await context.Records.CountAsync(),
+                    count,
                     recordlist = await context.Records
                     .OrderByDescending(r => r.Id)
                     .Where(r => r.Id < lastid)
                     .Skip(10 * step)
                     .Take(10)
-                    .Select(r => new { id = r.Id, mode = r.Mode.ToString(), state = r.State.ToString(), time = r.Time.ToString("F") })
+                    .Select(r => new { id = r.Id, mode = r.Mode.ToString(), state = r.State.ToString(), time = r.Time.ToString("F"), dataset = datasets[r.DatasetId] })
                     .ToArrayAsync()
                 });
             else return Ok(new
             {
-                count = await context.Records.CountAsync(),
+                count,
                 recordlist = await context.Records
                 .OrderBy(r => r.Id)
                 .Where(r => r.Id > lastid)
                 .Skip(10 * step)
                 .Take(10)
-                .Select(r => new { id = r.Id, mode = r.Mode.ToString(), state = r.State.ToString(), time = r.Time.ToString("F") })
+                .Select(r => new { id = r.Id, mode = r.Mode.ToString(), state = r.State.ToString(), time = r.Time.ToString("F"), dataset = datasets[r.DatasetId] })
                 .Reverse()
                 .ToArrayAsync()
             });
         }
-        [HttpGet("/[Controller]/[Action]/{id}")]
-        public async Task<IActionResult> TestHistory(int id)
+        [HttpGet("/[Controller]/[Action]")]
+        public async Task<IActionResult> Dataset()
         {
-            //var record = await context.Records.Where(r => r.Id == id).Include(r=>r.Results).FirstAsync();
-            //var files = await context.Files.Where(f => f.GUID == record.GUID).Include(f => f.Node).ToListAsync();
-            //_ = Tasks.QueueTaskAsync(record,files);
-            //return Ok(record);
-            return Ok();
+            return Ok(await context.Datasets.ToArrayAsync());
+        }
+        [HttpGet("/[Controller]/[Action]")]
+        public async Task<IActionResult> TrainedDataset()
+        {
+            return Ok(await context.Datasets.Where(d=>d.Ready==true).Select(d=>new {d.Id,d.Name}).ToArrayAsync());
         }
         [HttpGet("/[Controller]/[Action]/{id}")]
         public async Task<IActionResult> Record(int id)
@@ -269,9 +272,10 @@ namespace Perception.Controllers
             var record = await context.Records
                 .Where(r => r.Id == id)
                 .Include(r => r.Files)
-                .ThenInclude(f=>f.Node)
+                  .ThenInclude(f=>f.Node)
                 .Include(r => r.Files)
-                .ThenInclude(f => f.Results)
+                  .ThenInclude(f => f.Results)
+                .Include(r=>r.Dataset)
                 .FirstAsync();
             object recordview;
             if (record.Mode == RecordMode.Predict) recordview = new PredictModeRecordView(record);

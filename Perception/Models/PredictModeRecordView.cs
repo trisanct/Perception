@@ -8,6 +8,7 @@ namespace Perception.Models
     public class PredictModeRecordView
     {
         public int Id { get; set; }
+        public string Dataset { get; set; }
         public string Mode { get; set; }
         public string State { get; set; }
         public string Filename { get; set; }
@@ -21,6 +22,7 @@ namespace Perception.Models
         public PredictModeRecordView(Record record)
         {
             Id = record.Id;
+            Dataset = record.Dataset is null ? "" : record.Dataset.Name;
             Mode = record.Mode.ToString();
             State = record.State.ToString();
             Filename = record.Files[0].Name + record.Files[0].Node.Extension;

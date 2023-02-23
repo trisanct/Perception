@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Perception.Data;
 
@@ -11,9 +12,11 @@ using Perception.Data;
 namespace Perception.Migrations
 {
     [DbContext(typeof(PerceptionContext))]
-    partial class PerceptionContextModelSnapshot : ModelSnapshot
+    [Migration("20230223091525_eighth")]
+    partial class eighth
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -113,7 +116,7 @@ namespace Perception.Migrations
                     b.Property<bool>("Cuda")
                         .HasColumnType("bit");
 
-                    b.Property<int>("DatasetId")
+                    b.Property<int?>("DatasetId")
                         .HasColumnType("int");
 
                     b.Property<int>("Fps")
@@ -184,9 +187,7 @@ namespace Perception.Migrations
                 {
                     b.HasOne("Perception.Data.Dataset", "Dataset")
                         .WithMany()
-                        .HasForeignKey("DatasetId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
+                        .HasForeignKey("DatasetId");
 
                     b.Navigation("Dataset");
                 });
