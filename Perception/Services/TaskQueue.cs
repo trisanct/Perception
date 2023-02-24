@@ -22,6 +22,10 @@ namespace Perception.Services
             Tasks = Channel.CreateUnbounded<Task>();
             ScopeFactory = scopeFactory;
         }
+        public int WaitingCount()
+        {
+            return Tasks.Count;
+        }
         public async Task QueueTaskAsync(Record record)
         {
             Task task;
