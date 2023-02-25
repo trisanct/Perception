@@ -37,18 +37,6 @@ namespace Perception.Controllers
             return Ok("Hello");
         }
         [HttpGet("/[Controller]/[Action]/{id}")]
-        public IActionResult TestTask(int id)
-        {
-            //var r = context.Records.Where(r => r.Id == id).Include(r=>r.Results).FirstOrDefault();
-
-            //if (r != null)
-            //{
-            //    var fs = context.Files.Where(f => f.GUID == r.GUID).Include(f => f.Node).ToList(); 
-            //    _ = Tasks.QueueTaskAsync(r, fs);
-            //}
-            return Ok();
-        }
-        [HttpGet("/[Controller]/[Action]/{id}")]
         public async Task<IActionResult> TestDaskAsync(int id)
         {
             var r = await context.Records.Where(r => r.Id == id).Include(r => r.Files).ThenInclude(f => f.Node).FirstAsync();
@@ -275,6 +263,7 @@ namespace Perception.Controllers
                   .ThenInclude(f=>f.Node)
                 .Include(r => r.Files)
                   .ThenInclude(f => f.Results)
+                  .OrderBy(r => r.Id)
                 .Include(r=>r.Dataset)
                 .FirstAsync();
             object recordview;

@@ -18,18 +18,14 @@ namespace Perception.Services
         private readonly string annotationpath = Directory.GetCurrentDirectory() + @"\Neural\voc_annotation.py";
         private Channel<Task> Tasks { get; }
         private IServiceScopeFactory ScopeFactory { get; }
-        public TaskQueue(IServiceScopeFactory scopeFactory)
+        public TrainingTasks(IServiceScopeFactory scopeFactory)
         {
             Tasks = Channel.CreateUnbounded<Task>();
             ScopeFactory = scopeFactory;
         }
         public async Task QueueTaskAsync(Dataset dataset)
         {
-            Task task;
-            if (record.Mode == Record.RecordMode.Predict) task = PredictModeTask(record);
-            else if (record.Mode == Record.RecordMode.Directory) task = DirectoryModeTask(record);
-            else task = TestPredict(record, record.Files);
-            await Tasks.Writer.WriteAsync(task);
+
         }
 
         public async Task<Task> DequeueAsync()
@@ -41,7 +37,7 @@ namespace Perception.Services
             var datasetpath=$@"{basedatasetpath}\{dataset.Id}";
             var p1=new Process()
             {
-                StartInfo=new StartInfo()
+                StartInfo=new ProcessStartInfo()
                 {
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,

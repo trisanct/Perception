@@ -14,8 +14,7 @@ namespace Perception.Models
         public string Filename { get; set; }
         public float Confidence { get; set; }
         public string Time { get; set; }
-        public string? Class { get; set; }
-        public float? Score { get; set; }
+        public List<ResultView> Results { get; set; } 
         public string InUrl { get; set; }
         public string? OutUrl { get; set; }
 
@@ -29,14 +28,18 @@ namespace Perception.Models
             Confidence = record.Confidence;
             Time = record.Time.ToString("F");
             InUrl = $"/work/{Id}/{record.Files[0].Id}{record.Files[0].Node.Extension}";
+            Results = new List<ResultView>();
             if (record.State == RecordState.Completed)
             {
-                if (record.Files[0].Results.Count > 0)
+                for(int i=0;i< record.Files[0].Results.Count;i++)
                 {
-                    Class = record.Files[0].Results[0].Class;
-                    Score = record.Files[0].Results[0].Score;
+                    Results.Add(new ResultView()
+                    {
+                        Id = i+1,
+                        Class = record.Files[0].Results[i].Class,
+                        Score = record.Files[0].Results[i].Score
+                    });
                 }
-                else Class = "未检出";
                 OutUrl = $"/work/{Id}/{record.Files[0].Id}_out{record.Files[0].Node.Extension}";
             }
 

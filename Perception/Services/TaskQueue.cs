@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Security.Claims;
 using System.Threading.Channels;
+using System.Text.Json;
 
 namespace Perception.Services
 {
@@ -17,6 +18,16 @@ namespace Perception.Services
         private readonly string networkpath = Directory.GetCurrentDirectory() + @"\Neural\predict.py";
         private Channel<Task> Tasks { get; }
         private IServiceScopeFactory ScopeFactory { get; }
+        private class PythonResult
+        {
+            public string Class { get; set; }
+            public float Score { get; set; }
+        }
+        private class PythonResults
+        {
+            public string Name { get; set; }
+            public List<PythonResult> Results { get; set; }
+        }
         public TaskQueue(IServiceScopeFactory scopeFactory)
         {
             Tasks = Channel.CreateUnbounded<Task>();
@@ -24,7 +35,7 @@ namespace Perception.Services
         }
         public int WaitingCount()
         {
-            return Tasks.Count;
+            return Tasks.Reader.Count;
         }
         public async Task QueueTaskAsync(Record record)
         {
@@ -70,25 +81,30 @@ namespace Perception.Services
                     {
                         if (context == null) throw new Exception("未知错误");
 
-                        if (p.ExitCode != 0) record.State = Record.RecordState.Error;
+                        if (p.ExitCode != 0)
+                        {
+                            record.State = Record.RecordState.Error;
+                            Console.WriteLine(p.StandardError.ReadToEnd());
+                        }
                         else
                         {
-                            var output= p.StandardOutput.ReadToEnd().TrimEnd(new char[] { '\r', '\n' });
-                            if(output.Length > 0)
+                            var pso = p.StandardOutput.ReadToEnd();
+                            var pythonresults = JsonSerializer.Deserialize<PythonResults>(pso);
+                            if (pythonresults != null)
                             {
-                                var outstrings = output.Split(',');
-                                var pclass = outstrings[0];
-                                var score = float.Parse(outstrings[1]);
-                                Console.WriteLine($"class:{pclass} score:{score}");
-                                var result = new Result()
+                                foreach (var pythonresult in pythonresults.Results)
                                 {
-                                    Class = pclass,
-                                    Score = score,
-                                    FileId = record.Files[0].Id
-                                };
-                                await context.Results.AddAsync(result);
+                                    var result = new Result()
+                                    {
+                                        Class = pythonresult.Class,
+                                        Score = pythonresult.Score,
+                                        FileId = record.Files[0].Id
+                                    };
+                                    await context.Results.AddAsync(result);
+                                }
+                                record.State = Record.RecordState.Completed;
                             }
-                            record.State = Record.RecordState.Completed;
+                            else record.State = Record.RecordState.Error;
                         }
                         context.Entry(record).Property("State").IsModified = true;
                         await context.SaveChangesAsync();
@@ -137,20 +153,19 @@ namespace Perception.Services
                             var rows = p.StandardOutput.ReadToEnd().TrimEnd(new char[] { '\r', '\n' }).Split("\r\n");
                             foreach (var row in rows)
                             {
-                                var outstrings = row.TrimEnd(',').Split(',');
-                                if(outstrings.Length == 3)
+                                var pythonresults = JsonSerializer.Deserialize<PythonResults>(row);
+                                if (pythonresults != null)
                                 {
-                                    var fileid = int.Parse(outstrings[0].Substring(0, outstrings[0].LastIndexOf('.')));
-                                    var pclass = outstrings[1];
-                                    var score = float.Parse(outstrings[2]);
-                                    Console.WriteLine($"class:{pclass} score:{score}");
-                                    var result = new Result()
+                                    foreach (var pythonresult in pythonresults.Results)
                                     {
-                                        Class = pclass,
-                                        Score = score,
-                                        FileId = fileid
-                                    };
-                                    await context.Results.AddAsync(result);
+                                        var result = new Result()
+                                        {
+                                            Class = pythonresult.Class,
+                                            Score = pythonresult.Score,
+                                            FileId = int.Parse(pythonresults.Name.Substring(0, pythonresults.Name.LastIndexOf('.')))
+                                        };
+                                        await context.Results.AddAsync(result);
+                                    }
                                 }
                             }
                             record.State = Record.RecordState.Completed;

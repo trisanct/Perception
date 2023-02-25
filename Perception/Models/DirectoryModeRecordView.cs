@@ -13,7 +13,7 @@ namespace Perception.Models
         public string State { get; set; }
         public float Confidence { get; set; }
         public string Time { get; set; }
-        public List<ResultView> Results { get; set; }
+        public List<FileResultView> FileResults { get; set; }
         public DirectoryModeRecordView(Record record)
         {
             Id = record.Id;
@@ -22,39 +22,40 @@ namespace Perception.Models
             State = record.State.ToString();
             Confidence = record.Confidence;
             Time = record.Time.ToString("F");
-            Results = new List<ResultView>();
+            FileResults = new List<FileResultView>();
             if (record.State == RecordState.Completed)
             {
                 foreach (var file in record.Files)
                 {
+                    var fileresult = new FileResultView()
+                    {
+                        Filename = file.Name + file.Node.Extension,
+                        InUrl = $"/work/{Id}/{file.Id}{file.Node.Extension}",
+                        OutUrl = $"/work/{Id}/out/{file.Id}{file.Node.Extension}",
+                        Results = new List<ResultView>()
+                    };
                     if (file.Results.Count > 0)
-                        Results.Add(new ResultView
+                    {
+                        for (int i = 0; i < file.Results.Count; i++)
                         {
-                            Filename = file.Name + file.Node.Extension,
-                            Class = file.Results[0].Class,
-                            Score = file.Results[0].Score,
-                            InUrl = $"/work/{Id}/{file.Id}{file.Node.Extension}",
-                            OutUrl = $"/work/{Id}/out/{file.Id}{file.Node.Extension}"
-                        });
-                    else
-                        Results.Add(new ResultView
-                        {
-                            Filename = file.Name + file.Node.Extension,
-                            Class = "未检出",
-                            InUrl = $"/work/{Id}/{file.Id}{file.Node.Extension}",
-                            OutUrl = $"/work/{Id}/out/{file.Id}{file.Node.Extension}"
-                        });
-
+                            fileresult.Results.Add(new ResultView()
+                            {
+                                Id = i + 1,
+                                Class = file.Results[i].Class,
+                                Score = file.Results[i].Score
+                            });
+                        }
+                    }
+                    FileResults.Add(fileresult);
                 }
             }
 
         }
     }
-    public class ResultView
+    public class FileResultView
     {
         public string Filename { get; set; }
-        public string Class { get; set; }
-        public float? Score { get; set; }
+        public List<ResultView> Results { get; set; }
         public string? InUrl { get; set; }
         public string? OutUrl { get; set; }
     }

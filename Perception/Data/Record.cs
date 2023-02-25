@@ -1,5 +1,6 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Identity.Client;
+using Perception.Models;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using static Perception.Data.Record;
@@ -25,20 +26,12 @@ namespace Perception.Data
         public Record(RecordForm record)
         {
             Mode = record.Mode;
+            DatasetId= record.DatasetId;
             Fps = record.Fps;
             TestInterval = record.TestInterval;
             Cuda = record.Cuda;
             Confidence = record.Confidence;
             State = RecordState.Waiting;
         }
-    }
-    public class RecordForm
-    {
-        public Guid GUID { get; set; }
-        public RecordMode Mode { get; set; }
-        public int Fps { get; set; }
-        public int TestInterval { get; set; }
-        public bool Cuda { get; set; }
-        public float Confidence { get; set; }
     }
 }
