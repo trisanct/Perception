@@ -9,14 +9,15 @@ using System.Text.Json;
 
 namespace Perception.Services
 {
-    public class TaskQueue
+    public class PredictTaskQueue
     {
         private readonly string testinputpath = Directory.GetCurrentDirectory() + $@"\wwwroot\input";
         private readonly string inputpath = Directory.GetCurrentDirectory() + $@"\wwwroot\upload";
         private readonly string outputpath = Directory.GetCurrentDirectory() + $@"\wwwroot\output";
         private readonly string baseworkpath = Directory.GetCurrentDirectory() + $@"\wwwroot\work";
         private readonly string networkpath = Directory.GetCurrentDirectory() + @"\Neural\predict.py";
-        private Channel<Task> Tasks { get; }
+        private Channel<Func<CancellationToken, Task>> PredictTasks { get; }
+        private Channel<Task> TrainTasks { get; }
         private IServiceScopeFactory ScopeFactory { get; }
         private class PythonResult
         {
@@ -28,52 +29,53 @@ namespace Perception.Services
             public string Name { get; set; }
             public List<PythonResult> Results { get; set; }
         }
-        public TaskQueue(IServiceScopeFactory scopeFactory)
+        public PredictTaskQueue(IServiceScopeFactory scopeFactory)
         {
-            Tasks = Channel.CreateUnbounded<Task>();
+            PredictTasks = Channel.CreateUnbounded<Func<CancellationToken, Task>>();
             ScopeFactory = scopeFactory;
         }
         public int WaitingCount()
         {
-            return Tasks.Reader.Count;
+            return PredictTasks.Reader.Count;
         }
-        public async Task QueueTaskAsync(Record record)
+        public async Task QueuePredictTaskAsync(Record record)
         {
-            Task task;
-            if (record.Mode == Record.RecordMode.Predict) task = PredictModeTask(record);
-            else if (record.Mode == Record.RecordMode.Directory) task = DirectoryModeTask(record);
-            else task = TestPredict(record, record.Files);
-            await Tasks.Writer.WriteAsync(task);
+            Func<CancellationToken, Task> task;
+            if (record.Mode == Record.RecordMode.Predict) task = st => PredictModeTask(record,st);
+            else if (record.Mode == Record.RecordMode.Directory) task = st => DirectoryModeTask(record, st);
+            else return;
+            await PredictTasks.Writer.WriteAsync(task);
         }
 
-        public async Task<Task> DequeueAsync()
+
+        public async Task<Func<CancellationToken, Task>> DequeuePredictTaskAsync()
         {
-            return await Tasks.Reader.ReadAsync();
+            return await PredictTasks.Reader.ReadAsync();
         }
-        private async Task PredictModeTask(Record record)
+        private async Task PredictModeTask(Record record, CancellationToken stoppingToken)
         {
+            Console.WriteLine($"进入task{record.Id}");
+            var workpath = $@"{baseworkpath}\{record.Id}";
+            Directory.CreateDirectory(workpath);
+            File.Copy($@"{inputpath}\{record.Files[0].NodeId}{record.Files[0].Node.Extension}", $@"{workpath}\{record.Files[0].Id}{record.Files[0].Node.Extension}", true);
+            var p = new Process()
+            {
+                StartInfo = new ProcessStartInfo()
+                {
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    CreateNoWindow = false,
+                    UseShellExecute = false,
+                    WorkingDirectory = workpath,
+                    FileName = "python",
+                    Arguments = $@"{networkpath} predict {record.Files[0].Id}{record.Files[0].Node.Extension} {record.Files[0].Id}_out{record.Files[0].Node.Extension}"
+                }
+            };
             try
             {
-                Console.WriteLine($"进入task{record.Id}");
-                var workpath = $@"{baseworkpath}\{record.Id}";
-                Directory.CreateDirectory(workpath);
-                File.Copy($@"{inputpath}\{record.Files[0].NodeId}{record.Files[0].Node.Extension}", $@"{workpath}\{record.Files[0].Id}{record.Files[0].Node.Extension}", true);
-                var p = new Process()
-                {
-                    StartInfo = new ProcessStartInfo()
-                    {
-                        RedirectStandardOutput = true,
-                        RedirectStandardError = true,
-                        CreateNoWindow = false,
-                        UseShellExecute = false,
-                        WorkingDirectory = workpath,
-                        FileName = "python",
-                        Arguments = $@"{networkpath} predict {record.Files[0].Id}{record.Files[0].Node.Extension} {record.Files[0].Id}_out{record.Files[0].Node.Extension}"
-                    }
-                };
                 p.Start();
                 //Console.WriteLine($"运行python程序{record.Id}");
-                await p.WaitForExitAsync();
+                await p.WaitForExitAsync(stoppingToken);
                 //Console.WriteLine($"python程序退出{record.Id}");
                 using (var scope = ScopeFactory.CreateScope())
                 {
@@ -111,9 +113,18 @@ namespace Perception.Services
                     }
                 }
             }
-            catch (Exception e) { Console.WriteLine(e.Message); }
+            catch (Exception e)
+            {
+                if(e is TaskCanceledException) p.Kill(true);
+                Console.WriteLine(e.Message);
+            }
+            finally
+            {
+                p.Close();
+                p.Dispose();
+            }
         }
-        private async Task DirectoryModeTask(Record record)
+        private async Task DirectoryModeTask(Record record, CancellationToken stoppingToken)
         {
             try
             {
@@ -130,7 +141,7 @@ namespace Perception.Services
                     {
                         RedirectStandardOutput = true,
                         RedirectStandardError = true,
-                        CreateNoWindow = false,
+                        CreateNoWindow = true,
                         UseShellExecute = false,
                         WorkingDirectory = workpath,
                         FileName = "python",
@@ -139,7 +150,7 @@ namespace Perception.Services
                 };
                 p.Start();
                 Console.WriteLine($"运行python程序{record.Id}");
-                await p.WaitForExitAsync();
+                await p.WaitForExitAsync(stoppingToken);
                 Console.WriteLine($"python程序退出{record.Id}");
                 using (var scope = ScopeFactory.CreateScope())
                 {
@@ -177,56 +188,56 @@ namespace Perception.Services
             }
             catch (Exception e) { Console.WriteLine(e.Message); }
         }
-        private async Task TestPredict(Record record, List<FileMap> files)
-        {
-            Console.WriteLine($"进入task{record.Id}");
-            var workpath = $@"{baseworkpath}\{record.Id}";
-            Directory.CreateDirectory(workpath);
-            var p = new Process()
-            {
-                StartInfo = new ProcessStartInfo()
-                {
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    CreateNoWindow = false,
-                    UseShellExecute = false,
-                    WorkingDirectory = workpath,
-                    FileName = "python",
-                    Arguments = $@"{networkpath} predict {testinputpath}\{record.Id}.jpg {record.Id}_out.jpg"
-                }
-            };
-            p.Start();
-            Console.WriteLine($"运行python程序{record.Id}");
-            await p.WaitForExitAsync();
-            Console.WriteLine($"python程序退出{record.Id}");
-            if (p.ExitCode == 0)
-            {
-                var outstrings = p.StandardOutput.ReadToEnd().TrimEnd(new char[] { '\r', '\n' }).Split(',');
-                var pclass = outstrings[0].Replace(" ", "");
-                var score = outstrings[1];
-                using (var scope = ScopeFactory.CreateScope())
-                {
-                    using (var context = scope.ServiceProvider.GetService<PerceptionContext>())
-                    {
-                        //var record = await context!.Records.Where(r => r.Id == id).FirstOrDefaultAsync();
-                        var result = new Result()
-                        {
-                            Class = pclass,
-                            Score = float.Parse(score),
-                            FileId = record.Files[0].Id
-                        };
-                        Console.WriteLine($"class:{result.Class} score:{result.Score}");
-                        await context!.Results.AddAsync(result);
-                        await context.SaveChangesAsync();
-                    }
-                }
-            }
-            else
-            {
-                Console.WriteLine("error");
-                Console.WriteLine(p.StandardError.ReadToEnd());
-            }
-        }
+        //private async Task TestPredict(Record record, List<FileMap> files)
+        //{
+        //    Console.WriteLine($"进入task{record.Id}");
+        //    var workpath = $@"{baseworkpath}\{record.Id}";
+        //    Directory.CreateDirectory(workpath);
+        //    var p = new Process()
+        //    {
+        //        StartInfo = new ProcessStartInfo()
+        //        {
+        //            RedirectStandardOutput = true,
+        //            RedirectStandardError = true,
+        //            CreateNoWindow = false,
+        //            UseShellExecute = false,
+        //            WorkingDirectory = workpath,
+        //            FileName = "python",
+        //            Arguments = $@"{networkpath} predict {testinputpath}\{record.Id}.jpg {record.Id}_out.jpg"
+        //        }
+        //    };
+        //    p.Start();
+        //    Console.WriteLine($"运行python程序{record.Id}");
+        //    await p.WaitForExitAsync();
+        //    Console.WriteLine($"python程序退出{record.Id}");
+        //    if (p.ExitCode == 0)
+        //    {
+        //        var outstrings = p.StandardOutput.ReadToEnd().TrimEnd(new char[] { '\r', '\n' }).Split(',');
+        //        var pclass = outstrings[0].Replace(" ", "");
+        //        var score = outstrings[1];
+        //        using (var scope = ScopeFactory.CreateScope())
+        //        {
+        //            using (var context = scope.ServiceProvider.GetService<PerceptionContext>())
+        //            {
+        //                //var record = await context!.Records.Where(r => r.Id == id).FirstOrDefaultAsync();
+        //                var result = new Result()
+        //                {
+        //                    Class = pclass,
+        //                    Score = float.Parse(score),
+        //                    FileId = record.Files[0].Id
+        //                };
+        //                Console.WriteLine($"class:{result.Class} score:{result.Score}");
+        //                await context!.Results.AddAsync(result);
+        //                await context.SaveChangesAsync();
+        //            }
+        //        }
+        //    }
+        //    else
+        //    {
+        //        Console.WriteLine("error");
+        //        Console.WriteLine(p.StandardError.ReadToEnd());
+        //    }
+        //}
 
     }
 }

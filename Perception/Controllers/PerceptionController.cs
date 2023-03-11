@@ -7,6 +7,7 @@ using Perception.Services;
 using System.Data.SqlTypes;
 using System.Diagnostics;
 using System.IO;
+using System.Xml.Linq;
 using static Perception.Data.Record;
 
 namespace Perception.Controllers
@@ -16,12 +17,13 @@ namespace Perception.Controllers
     public class PerceptionController : ControllerBase
     {
         private readonly PerceptionContext context;
-        private TaskQueue Tasks { get; }
-
-        public PerceptionController(PerceptionContext context, TaskQueue tasks)
+        private PredictTaskQueue Tasks { get; }
+        private readonly TrainService trainService;
+        public PerceptionController(PerceptionContext context, PredictTaskQueue tasks, TrainService trainService)
         {
             this.context = context;
             Tasks = tasks;
+            this.trainService = trainService;
         }
         private byte[] HexToByte(string hex) { return Enumerable.Range(0, 32).Select(i => Convert.ToByte(hex.Substring(i << 1, 2), 16)).ToArray(); }
         private (string name, string ext) Apart(string fullname)
@@ -40,7 +42,7 @@ namespace Perception.Controllers
         public async Task<IActionResult> TestDaskAsync(int id)
         {
             var r = await context.Records.Where(r => r.Id == id).Include(r => r.Files).ThenInclude(f => f.Node).FirstAsync();
-            _ = Tasks.QueueTaskAsync(r);
+            _ = Tasks.QueuePredictTaskAsync(r);
             //if (r != null)
             //{
             //    var fs = context.Files.Where(f => f.GUID == r.GUID).Include(f => f.Node).ToList(); 
@@ -52,7 +54,7 @@ namespace Perception.Controllers
         public IActionResult GetGUID()
         {
             var guid = Guid.NewGuid();
-            Directory.CreateDirectory(Directory.GetCurrentDirectory() + $@"\wwwroot\upload\{guid}");
+            //Directory.CreateDirectory(Directory.GetCurrentDirectory() + $@"\wwwroot\upload\{guid}");
             return Ok(guid);
         }
 
@@ -198,7 +200,7 @@ namespace Perception.Controllers
                 foreach (var f in files) f.RecordId = record.Id;
                 await context.SaveChangesAsync();
                 record.Files = files;
-                _ = Tasks.QueueTaskAsync(record);
+                _ = Tasks.QueuePredictTaskAsync(record);
                 return Ok(record.Id);
             }
             catch { return BadRequest(); }
@@ -272,10 +274,98 @@ namespace Perception.Controllers
             else return BadRequest();
             return Ok(recordview);
         }
+
+        [HttpPost("/[Controller]/[Action]")]
+        public async Task<IActionResult> UploadDatasetFile([FromForm(Name = "file")] IFormFile file, [FromForm(Name = "guid")] string guidstring)
+        {
+            try
+            {
+                if (file != null)
+                {
+                    if (file.Length > 0)
+                    {
+                        var basepath = Directory.GetCurrentDirectory() + $@"\Neural\datasets\{guidstring}";
+                        if(!Directory.Exists(basepath)) Directory.CreateDirectory(basepath);
+                        string path;
+                        if (file.FileName == "classes.txt") path = basepath + $@"\classes.txt";
+                        else
+                        { 
+                            basepath = basepath + $@"\images";
+                            if (!Directory.Exists(basepath)) Directory.CreateDirectory(basepath);
+                            path = basepath + $@"\{file.FileName}";
+                        }
+                        using (var stream = System.IO.File.Create(path)) await file.CopyToAsync(stream);
+                        return Ok();
+                    }
+                }
+                return BadRequest("空文件");
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(ex);
+            }
+        }
+        [HttpPost("/[Controller]/[Action]")]
+        public async Task<IActionResult> UploadDatasetXMLFiles([FromForm(Name = "file")] List<IFormFile> xmlfiles, [FromForm(Name = "guid")] string guidstring)
+        {
+            try
+            {
+                if (xmlfiles == null) throw new Exception("空文件");
+                if (xmlfiles.Count == 0) throw new Exception("空文件");
+                var basepath = Directory.GetCurrentDirectory() + $@"\Neural\datasets\{guidstring}";
+                if (!Directory.Exists(basepath)) Directory.CreateDirectory(basepath);
+                basepath = basepath + $@"\annotations";
+                if (!Directory.Exists(basepath)) Directory.CreateDirectory(basepath);
+                foreach (var file in xmlfiles)
+                {
+                    if(file.Length==0) throw new Exception("空文件");
+                    var path = basepath + $@"\{file.FileName}";
+                    using (var stream = System.IO.File.Create(path)) await file.CopyToAsync(stream);
+                }
+                return Ok();
+            }
+            catch(Exception ex)
+            {
+                Console.WriteLine(ex.Message);
+                return BadRequest(ex.Message);
+            }
+        }
+        [HttpPost("/[Controller]/[Action]")]
+        public async Task<IActionResult> SubmitDataset([FromBody] DatasetModel model)
+        {
+            var dataset = new Dataset()
+            {
+                Name = model.Name,
+                Epoch = model.Epoch,
+                Ready = false,
+                Augmentation = model.Augmentation
+            };
+            await context.Datasets.AddAsync(dataset);
+            await context.SaveChangesAsync();
+            var basepath = Directory.GetCurrentDirectory() + $@"\Neural\datasets";
+            var dir = new DirectoryInfo($@"{basepath}\{model.Guid}");
+            dir.MoveTo($@"{basepath}\{dataset.Id}");
+            _ = trainService.QueueTaskAsync(dataset);
+            return Ok(dataset.Id);
+        }
+
+        [HttpGet("/[Controller]/[Action]/{id}")]
+        public async Task<IActionResult> TestTrain([FromRoute]int id)
+        {
+            var d =await context.Datasets.FirstAsync(x => x.Id == id);
+            _ = trainService.QueueTaskAsync(d);
+            return Ok();
+        }
+        [HttpGet("/[Controller]/[Action]")]
+        public IActionResult StopCurrentTrainTask()
+        {
+            trainService.StopCurrent();
+            return Ok();
+        }
         [HttpGet("/[Controller]/[Action]/{filename}")]
         public IActionResult MKVFileTest(string filename)
         {
-            return PhysicalFile(@"C:\Users\sherl\source\repos\Perception\Perception\wwwroot\upload\6.mkv", "application/octet-stream",true);
+            return PhysicalFile(@"C:\Users\sherl\source\repos\Perception\Perception\wwwroot\upload\6.mkv", "application/octet-stream", true);
         }
     }
 }

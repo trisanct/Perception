@@ -7,7 +7,9 @@ using Perception.Services;
 using Swashbuckle.AspNetCore.SwaggerGen;
 using System.Diagnostics;
 using System.Text;
+using System.Threading.Tasks;
 
+Console.WriteLine(Thread.CurrentThread.ManagedThreadId);
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
@@ -35,7 +37,8 @@ builder.Services.AddDbContext<PerceptionContext>(options => {
 });
 
 builder.Services.AddControllers();
-builder.Services.AddSingleton<TaskQueue>();
+builder.Services.AddSingleton<PredictTaskQueue>();
+builder.Services.AddSingleton<TrainService>();
 builder.Services.AddHostedService<NeuralNetworkService>();
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
