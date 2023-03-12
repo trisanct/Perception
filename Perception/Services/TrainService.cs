@@ -114,30 +114,54 @@ namespace Perception.Services
                     Arguments = $@"{trainpath} {dataset.Epoch}"
                 }
             };
-            p2.OutputDataReceived += new DataReceivedEventHandler((sender, e) =>
+            using (var scope = ScopeFactory.CreateScope())
             {
-                Console.WriteLine(e.Data);
-            });
-            p2.Start();
-            p2.BeginOutputReadLine();
-            p2.PriorityClass = ProcessPriorityClass.RealTime;
-            try
-            {
-                await p2.WaitForExitAsync(stoppingToken);
-                if (p2.ExitCode != 0)
+                using (var context = scope.ServiceProvider.GetService<PerceptionContext>())
                 {
-                    Console.WriteLine(p2.StandardError.ReadToEnd());
+                    if (context == null) throw new Exception("Î´Öª´íÎó");
+                    try
+                    {
+                        p2.OutputDataReceived += new DataReceivedEventHandler((sender, e) =>
+                        {
+                            Console.WriteLine(e.Data);
+                            if (e.Data.Contains('/'))
+                            {
+                                dataset.State = "ÑµÁ·ÖÐ£º" + e.Data;
+                                context.Entry(dataset).Property("State").IsModified = true;
+                                context.SaveChanges();
+                            }
+                        });
+                        p2.Start();
+                        p2.BeginOutputReadLine();
+                        p2.PriorityClass = ProcessPriorityClass.High;
+                        await p2.WaitForExitAsync(stoppingToken);
+                        if (p2.ExitCode != 0)
+                        {
+                            Console.WriteLine(p2.StandardError.ReadToEnd());
+                        }
+                        dataset.State = "ÑµÁ·Íê³É";
+                        dataset.Ready = true;
+                        context.Entry(dataset).Property("State").IsModified = true;
+                        context.Entry(dataset).Property("Ready").IsModified = true;
+                        await context.SaveChangesAsync();
+                    }
+                    catch (Exception ex)
+                    {
+                        if (ex is TaskCanceledException)
+                        {
+                            p2.Kill(true);
+                            dataset.State = "ÑµÁ·±»ÖÐÖ¹";
+                            context.Entry(dataset).Property("State").IsModified = true;
+                            await context.SaveChangesAsync();
+                        }
+                        Console.WriteLine(ex.Message);
+                    }
+                    finally
+                    {
+                        p2.Close();
+                        p2.Dispose();
+                    }
                 }
-            }
-            catch (TaskCanceledException ex)
-            {
-                p2.Kill(true);
-                Console.WriteLine(ex.Message);
-            }
-            finally
-            {
-                p2.Close();
-                p2.Dispose();
             }
         }
     }

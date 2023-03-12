@@ -41,8 +41,9 @@ namespace Perception.Services
         public async Task QueuePredictTaskAsync(Record record)
         {
             Func<CancellationToken, Task> task;
-            if (record.Mode == Record.RecordMode.Predict) task = st => PredictModeTask(record,st);
+            if (record.Mode == Record.RecordMode.Predict) task = st => PredictModeTask(record, st);
             else if (record.Mode == Record.RecordMode.Directory) task = st => DirectoryModeTask(record, st);
+            else if (record.Mode == Record.RecordMode.Video) task = st => VideoModeTask(record, st);
             else return;
             await PredictTasks.Writer.WriteAsync(task);
         }
@@ -115,7 +116,7 @@ namespace Perception.Services
             }
             catch (Exception e)
             {
-                if(e is TaskCanceledException) p.Kill(true);
+                if (e is TaskCanceledException) p.Kill(true);
                 Console.WriteLine(e.Message);
             }
             finally
@@ -126,28 +127,28 @@ namespace Perception.Services
         }
         private async Task DirectoryModeTask(Record record, CancellationToken stoppingToken)
         {
+            Console.WriteLine($"进入task{record.Id}");
+            var workpath = $@"{baseworkpath}\{record.Id}";
+            Directory.CreateDirectory(workpath);
+            foreach (var file in record.Files)
+            {
+                File.Copy($@"{inputpath}\{file.NodeId}{file.Node.Extension}", $@"{workpath}\{file.Id}{file.Node.Extension}", true);
+            }
+            var p = new Process()
+            {
+                StartInfo = new ProcessStartInfo()
+                {
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    CreateNoWindow = true,
+                    UseShellExecute = false,
+                    WorkingDirectory = workpath,
+                    FileName = "python",
+                    Arguments = $@"{networkpath} directory ./ ./out"
+                }
+            };
             try
             {
-                Console.WriteLine($"进入task{record.Id}");
-                var workpath = $@"{baseworkpath}\{record.Id}";
-                Directory.CreateDirectory(workpath);
-                foreach (var file in record.Files)
-                {
-                    File.Copy($@"{inputpath}\{file.NodeId}{file.Node.Extension}", $@"{workpath}\{file.Id}{file.Node.Extension}", true);
-                }
-                var p = new Process()
-                {
-                    StartInfo = new ProcessStartInfo()
-                    {
-                        RedirectStandardOutput = true,
-                        RedirectStandardError = true,
-                        CreateNoWindow = true,
-                        UseShellExecute = false,
-                        WorkingDirectory = workpath,
-                        FileName = "python",
-                        Arguments = $@"{networkpath} directory ./ ./out"
-                    }
-                };
                 p.Start();
                 Console.WriteLine($"运行python程序{record.Id}");
                 await p.WaitForExitAsync(stoppingToken);
@@ -186,7 +187,88 @@ namespace Perception.Services
                     }
                 }
             }
-            catch (Exception e) { Console.WriteLine(e.Message); }
+            catch (Exception e)
+            {
+                if (e is TaskCanceledException) p.Kill(true);
+                Console.WriteLine(e.Message);
+            }
+            finally
+            {
+                p.Close();
+                p.Dispose();
+            }
+        }
+        private async Task VideoModeTask(Record record, CancellationToken stoppingToken)
+        {
+            Console.WriteLine($"进入task{record.Id}");
+            var workpath = $@"{baseworkpath}\{record.Id}";
+            Directory.CreateDirectory(workpath);
+            File.Copy($@"{inputpath}\{record.Files[0].NodeId}{record.Files[0].Node.Extension}", $@"{workpath}\{record.Files[0].Id}{record.Files[0].Node.Extension}", true);
+            var p = new Process()
+            {
+                StartInfo = new ProcessStartInfo()
+                {
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    CreateNoWindow = false,
+                    UseShellExecute = false,
+                    WorkingDirectory = workpath,
+                    FileName = "python",
+                    Arguments = $@"{networkpath} video {record.Files[0].Id}{record.Files[0].Node.Extension} {record.Files[0].Id}_out{record.Files[0].Node.Extension}"
+                }
+            };
+            try
+            {
+                p.Start();
+                //Console.WriteLine($"运行python程序{record.Id}");
+                await p.WaitForExitAsync(stoppingToken);
+                //Console.WriteLine($"python程序退出{record.Id}");
+                using (var scope = ScopeFactory.CreateScope())
+                {
+                    using (var context = scope.ServiceProvider.GetService<PerceptionContext>())
+                    {
+                        if (context == null) throw new Exception("未知错误");
+
+                        if (p.ExitCode != 0)
+                        {
+                            record.State = Record.RecordState.Error;
+                            Console.WriteLine(p.StandardError.ReadToEnd());
+                        }
+                        else
+                        {
+                            var pso = p.StandardOutput.ReadToEnd();
+                            var pythonresults = JsonSerializer.Deserialize<PythonResults>(pso);
+                            if (pythonresults != null)
+                            {
+                                foreach (var pythonresult in pythonresults.Results)
+                                {
+                                    var result = new Result()
+                                    {
+                                        Class = pythonresult.Class,
+                                        Score = pythonresult.Score,
+                                        FileId = record.Files[0].Id
+                                    };
+                                    await context.Results.AddAsync(result);
+                                }
+                                record.State = Record.RecordState.Completed;
+                            }
+                            else record.State = Record.RecordState.Error;
+                        }
+                        context.Entry(record).Property("State").IsModified = true;
+                        await context.SaveChangesAsync();
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                if (e is TaskCanceledException) p.Kill(true);
+                Console.WriteLine(e.Message);
+            }
+            finally
+            {
+                p.Close();
+                p.Dispose();
+            }
         }
         //private async Task TestPredict(Record record, List<FileMap> files)
         //{

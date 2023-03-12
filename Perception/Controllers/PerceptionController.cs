@@ -365,7 +365,7 @@ namespace Perception.Controllers
         [HttpGet("/[Controller]/[Action]/{filename}")]
         public IActionResult MKVFileTest(string filename)
         {
-            return PhysicalFile(@"C:\Users\sherl\source\repos\Perception\Perception\wwwroot\upload\6.mkv", "application/octet-stream", true);
+            return PhysicalFile($@"C:\Users\sherl\source\repos\Perception\Perception\wwwroot\{filename}", "application/octet-stream", true);
         }
     }
 }
