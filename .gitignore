@@ -35,9 +35,22 @@ bld/
 
 # Visual Studio 2015/2017 cache/options directory
 .vs/
+**/.vscode
 # Uncomment if you have tasks that create the project's static files in wwwroot
-wwwroot/
-Neural/
+Perception/wwwroot/input
+Perception/wwwroot/output
+Perception/wwwroot/upload
+Perception/Neural
+Perception/Neural/logs
+Perception/Neural/out
+Perception/Neural/tmp
+Perception/Neural/videos
+Perception/Neural/videos_out
+Perception/Neural/*.txt
+Perception/Neural/*.md
+Perception/Neural/*.jpg
+Perception/Neural/*.bmp
+Perception/Neural/LISENCE
 
 # Visual Studio 2017 auto generated files
 Generated\ Files/
