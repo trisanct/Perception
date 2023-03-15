@@ -16,6 +16,7 @@ namespace Perception.Services
         private readonly string outputpath = Directory.GetCurrentDirectory() + $@"\wwwroot\output";
         private readonly string baseworkpath = Directory.GetCurrentDirectory() + $@"\wwwroot\work";
         private readonly string networkpath = Directory.GetCurrentDirectory() + @"\Neural\predict.py";
+        private readonly string datasetbasepath = Directory.GetCurrentDirectory() + @"\Neural\datasets";
         private Channel<Func<CancellationToken, Task>> PredictTasks { get; }
         private Channel<Task> TrainTasks { get; }
         private IServiceScopeFactory ScopeFactory { get; }
@@ -57,8 +58,10 @@ namespace Perception.Services
         {
             Console.WriteLine($"进入task{record.Id}");
             var workpath = $@"{baseworkpath}\{record.Id}";
+            var inpath= $@"{workpath}\{record.Files[0].Id}{record.Files[0].Node.Extension}";
+            var outpath = $@"{workpath}\{record.Files[0].Id}_out{record.Files[0].Node.Extension}";
             Directory.CreateDirectory(workpath);
-            File.Copy($@"{inputpath}\{record.Files[0].NodeId}{record.Files[0].Node.Extension}", $@"{workpath}\{record.Files[0].Id}{record.Files[0].Node.Extension}", true);
+            File.Copy($@"{inputpath}\{record.Files[0].NodeId}{record.Files[0].Node.Extension}", inpath, true);
             var p = new Process()
             {
                 StartInfo = new ProcessStartInfo()
@@ -67,9 +70,9 @@ namespace Perception.Services
                     RedirectStandardError = true,
                     CreateNoWindow = false,
                     UseShellExecute = false,
-                    WorkingDirectory = workpath,
+                    WorkingDirectory = $@"{datasetbasepath}\{record.DatasetId}",
                     FileName = "python",
-                    Arguments = $@"{networkpath} predict {record.Files[0].Id}{record.Files[0].Node.Extension} {record.Files[0].Id}_out{record.Files[0].Node.Extension}"
+                    Arguments = $@"{networkpath} predict {inpath} {outpath}"
                 }
             };
             try
@@ -142,9 +145,9 @@ namespace Perception.Services
                     RedirectStandardError = true,
                     CreateNoWindow = true,
                     UseShellExecute = false,
-                    WorkingDirectory = workpath,
+                    WorkingDirectory = $@"{datasetbasepath}\{record.DatasetId}",
                     FileName = "python",
-                    Arguments = $@"{networkpath} directory ./ ./out"
+                    Arguments = $@"{networkpath} directory {workpath} {workpath}\out"
                 }
             };
             try
